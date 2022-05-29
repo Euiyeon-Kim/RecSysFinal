@@ -1,0 +1,16 @@
+model: KGCN
+dataset: movie    # ['movie', 'book', 'music']
+ratio: 0.8
+
+aggregator: sum
+neighbor_sample_size: 8
+dim: 16
+n_iter: 1
+
+l2_weight: 1e-4
+lr: 5e-4
+
+n_epochs: 20
+batch_size: 32
+
+#configs.exp_dir = f'{configs.model}_{configs.data}'
