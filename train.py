@@ -132,6 +132,7 @@ def train(config, datasets, writer):
     train_data, valid_data, test_data, n_entity, n_relation, user_triple_set, item_triple_set = datasets
     print(f'{config.dataset} dataset has {n_entity} entities and {n_relation} relations')
 
+    ipe = np.ceil(train_data.shape[0] / config.batch_size)
     model, optim, loss_fn = build_model_optim_losses(config, n_entity, n_relation)
     for epoch in range(config.n_epochs):
         np.random.shuffle(train_data)
@@ -145,7 +146,7 @@ def train(config, datasets, writer):
             loss.backward()
             optim.step()
             start += config.batch_size
-            writer.add_scalar('bce_loss', loss.item(), int((epoch * train_data.shape[0]) + (start / config.batch_size)))
+            writer.add_scalar('bce_loss', loss.item(), (epoch * ipe) + (start // config.batch_size))
 
         eval_auc, eval_f1 = ctr_eval(config, model, valid_data, user_triple_set, item_triple_set)
         test_auc, test_f1 = ctr_eval(config, model, test_data, user_triple_set, item_triple_set)
@@ -162,7 +163,7 @@ def train(config, datasets, writer):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/CKAN_movie.yaml', help='Configuration YAML path')
+    parser.add_argument('--config', type=str, default='configs/CKAN_music.yaml', help='Configuration YAML path')
     args = parser.parse_args()
 
     set_random_seed(712933, 2021)

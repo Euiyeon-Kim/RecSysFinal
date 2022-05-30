@@ -29,9 +29,8 @@ def prepare_train(config_path):
     config.exp_name = exp_name
     os.makedirs(f'exps/logs/{exp_name}', exist_ok=True)
     writer = SummaryWriter(f'exps/logs/{exp_name}')
-    os.makedirs(f'exps/configs', exist_ok=True)
-    shutil.copy(config_path, f"exps/configs/{exp_name}.yaml")
-
+    # os.makedirs(f'exps/configs', exist_ok=True)
+    # shutil.copy(config_path, f"exps/configs/{exp_name}.yaml")
     return config, writer
 
 
