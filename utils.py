@@ -38,16 +38,18 @@ def prepare_train(config_path):
     return config, writer
 
 
-def build_model_optim_losses(config, n_entity, n_relation):
+def build_model_optim_losses(config, **kwargs):
     model, optimizer, loss_func = None, None, None
 
     if config.model == 'CKAN':
-        model = models.__dict__['Parallel'](models.__dict__['CKAN'](config, n_entity, n_relation)).cuda()
+        model = models.__dict__['Parallel'](models.__dict__['CKAN'](config, kwargs['n_entity'], kwargs['n_relation'])).cuda()
         optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, model.parameters()),
             lr=float(config.lr),
             weight_decay=float(config.l2_weight),
         )
         loss_func = nn.BCELoss()
-    elif config.model == 'KGIN'
+    elif config.model == 'KGIN':
+        model = models.__dict__['Parallel'](models.__dict__['KGIN']()).cuda()
+
     return model, optimizer, loss_func

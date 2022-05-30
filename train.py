@@ -133,7 +133,7 @@ def train_ckan(config, datasets, writer):
     print(f'{config.dataset} dataset has {n_entity} entities and {n_relation} relations')
 
     ipe = np.ceil(train_data.shape[0] / config.batch_size)
-    model, optim, loss_fn = build_model_optim_losses(config, n_entity, n_relation)
+    model, optim, loss_fn = build_model_optim_losses(config, n_entity=n_entity, n_relation=n_relation)
     for epoch in range(config.n_epochs):
         np.random.shuffle(train_data)
         start = 0
@@ -168,7 +168,7 @@ def train_kgin(config, datasets, writer):
     print(f'{config.dataset} dataset has {n_params["n_entities"]} entities and {n_params["n_relations"]} relations')
 
     ipe = np.ceil(train_data.shape[0] / config.batch_size)
-    model, optim, loss_fn = build_model_optim_losses(config, n_entity, n_relation)
+    model, optim, loss_fn = build_model_optim_losses(config, n_entity=n_entity, n_relation=n_relation)
     for epoch in range(config.n_epochs):
         np.random.shuffle(train_data)
         start = 0
