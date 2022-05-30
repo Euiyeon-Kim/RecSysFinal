@@ -10,7 +10,7 @@ Attentive Embedding Layer
 Prediction layer
     Aggregation을 통해 user item embedding 구하고 matmul -> prediction
 """
-import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

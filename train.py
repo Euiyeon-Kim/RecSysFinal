@@ -128,7 +128,7 @@ def topk_eval(args, model, train_data, test_data, user_triple_set, item_triple_s
     _show_recall_info(zip(k_list, recall, precision))
 
 
-def train(config, datasets, writer):
+def train_ckan(config, datasets, writer):
     train_data, valid_data, test_data, n_entity, n_relation, user_triple_set, item_triple_set = datasets
     print(f'{config.dataset} dataset has {n_entity} entities and {n_relation} relations')
 
@@ -161,9 +161,44 @@ def train(config, datasets, writer):
         topk_eval(config, model, train_data, test_data, user_triple_set, item_triple_set, writer, epoch)
 
 
+def train_kgin(config, datasets, writer):
+    train_data, eval_data, test_data, n_params, graph, mat_list = datasets
+    adj_mat_list, norm_mat_list, mean_mat_list = mat_list
+
+    print(f'{config.dataset} dataset has {n_params["n_entities"]} entities and {n_params["n_relations"]} relations')
+
+    ipe = np.ceil(train_data.shape[0] / config.batch_size)
+    model, optim, loss_fn = build_model_optim_losses(config, n_entity, n_relation)
+    for epoch in range(config.n_epochs):
+        np.random.shuffle(train_data)
+        start = 0
+
+        while start < train_data.shape[0]:
+            labels = torch.FloatTensor(train_data[start:start + config.batch_size, 2]).cuda()
+            scores = model(*_get_feed_data(config, train_data, user_triple_set, item_triple_set, start, start + config.batch_size))
+            loss = loss_fn(scores, labels)
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
+            start += config.batch_size
+            writer.add_scalar('bce_loss', loss.item(), (epoch * ipe) + (start // config.batch_size))
+
+        eval_auc, eval_f1 = ctr_eval(config, model, valid_data, user_triple_set, item_triple_set)
+        test_auc, test_f1 = ctr_eval(config, model, test_data, user_triple_set, item_triple_set)
+        writer.add_scalar('valid/auc', eval_auc, epoch)
+        writer.add_scalar('valid/f1', eval_f1, epoch)
+        writer.add_scalar('test/auc', test_auc, epoch)
+        writer.add_scalar('test/f1', test_f1, epoch)
+
+        ctr_info = 'epoch %.2d    eval auc: %.4f f1: %.4f    test auc: %.4f f1: %.4f'
+        logging.info(ctr_info, epoch, eval_auc, eval_f1, test_auc, test_f1)
+
+        topk_eval(config, model, train_data, test_data, user_triple_set, item_triple_set, writer, epoch)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/CKAN_movie.yaml', help='Configuration YAML path')
+    parser.add_argument('--config', type=str, default='configs/KGIN_music.yaml', help='Configuration YAML path')
     args = parser.parse_args()
 
     set_random_seed(712933, 2021)
@@ -171,6 +206,12 @@ if __name__ == '__main__':
 
     # Load dataset
     datasets = load_data(config)
-    train(config, datasets, writer)
+
+    # Train
+    if config.model == 'CKAN':
+        train_ckan(config, datasets, writer)
+    elif config.model == 'KGIN':
+        train_kgin(config, datasets, writer)
+
 
 
