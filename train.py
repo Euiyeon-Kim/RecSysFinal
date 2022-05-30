@@ -163,7 +163,7 @@ def train(config, datasets, writer):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/CKAN_music.yaml', help='Configuration YAML path')
+    parser.add_argument('--config', type=str, default='configs/CKAN_movie.yaml', help='Configuration YAML path')
     args = parser.parse_args()
 
     set_random_seed(712933, 2021)
