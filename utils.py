@@ -42,14 +42,17 @@ def build_model_optim_losses(config, **kwargs):
     model, optimizer, loss_func = None, None, None
 
     if config.model == 'CKAN':
-        model = models.__dict__['Parallel'](models.__dict__['CKAN'](config, kwargs['n_entity'], kwargs['n_relation'])).cuda()
+        model = models.__dict__['CKAN'](config, kwargs['n_entity'], kwargs['n_relation']).cuda()
         optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, model.parameters()),
             lr=float(config.lr),
             weight_decay=float(config.l2_weight),
         )
         loss_func = nn.BCELoss()
+
     elif config.model == 'KGIN':
-        model = models.__dict__['Parallel'](models.__dict__['KGIN']()).cuda()
+        model = models.__dict__['KGIN']().cuda()
+        optimizer = torch.optim.Adam(model.parameters(), lr=float(config.lr))
+        loss_func = nn.BCELoss()
 
     return model, optimizer, loss_func

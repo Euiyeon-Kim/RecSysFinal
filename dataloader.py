@@ -188,8 +188,6 @@ def load_data(args):
 
         logging.info('building the graph ...')
         graph, relation_dict = _kgin_build_graph(train_data, triplets)
-        # for k, v in relation_dict.items():
-        #     print(k, len(v))
         n_relations = len(relation_dict)
 
         logging.info('building the adj mat ...')

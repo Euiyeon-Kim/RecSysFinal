@@ -10,30 +10,6 @@ from dataloader import load_data
 from utils import set_random_seed, prepare_train, build_model_optim_losses
 
 
-def _get_triple_tensor(args, objs, triple_set):
-    # [h,r,t]  h: [layers, batch_size, triple_set_size]
-    h, r, t = [], [], []
-    for i in range(args.n_layer):
-        h.append(torch.LongTensor([triple_set[obj][i][0] for obj in objs]))
-        r.append(torch.LongTensor([triple_set[obj][i][1] for obj in objs]))
-        t.append(torch.LongTensor([triple_set[obj][i][2] for obj in objs]))
-
-        h = list(map(lambda x: x.cuda(), h))
-        r = list(map(lambda x: x.cuda(), r))
-        t = list(map(lambda x: x.cuda(), t))
-    return [h, r, t]
-
-
-def _get_feed_data(args, data, user_triple_set, item_triple_set, start, end):
-    # origin item
-    items = torch.LongTensor(data[start:end, 1]).cuda()
-
-    # kg propagation embeddings
-    users_triple = _get_triple_tensor(args, data[start:end, 0], user_triple_set)
-    items_triple = _get_triple_tensor(args, data[start:end, 1], item_triple_set)
-    return items, users_triple, items_triple
-
-
 def ctr_eval(args, model, data, user_triple_set, item_triple_set):
     auc_list = []
     f1_list = []
@@ -41,7 +17,7 @@ def ctr_eval(args, model, data, user_triple_set, item_triple_set):
     start = 0
     while start < data.shape[0]:
         labels = data[start:start + args.batch_size, 2]
-        scores = model(*_get_feed_data(args, data, user_triple_set, item_triple_set, start, start + args.batch_size))
+        scores = model(data, user_triple_set, item_triple_set, start, start + args.batch_size)
         scores = scores.detach().cpu().numpy()
         auc = roc_auc_score(y_true=labels, y_score=scores)
         predictions = [1 if i >= 0.5 else 0 for i in scores]
@@ -104,7 +80,7 @@ def topk_eval(args, model, train_data, test_data, user_triple_set, item_triple_s
         while start + args.batch_size <= len(test_item_list):
             items = test_item_list[start:start + args.batch_size]
             input_data = _get_topk_feed_data(user, items)
-            scores = model(*_get_feed_data(args, input_data, user_triple_set, item_triple_set, 0, args.batch_size))
+            scores = model(input_data, user_triple_set, item_triple_set, 0, args.batch_size)
             for item, score in zip(items, scores):
                 item_score_map[item] = score
             start += args.batch_size
@@ -112,7 +88,7 @@ def topk_eval(args, model, train_data, test_data, user_triple_set, item_triple_s
         if start < len(test_item_list):
             res_items = test_item_list[start:] + [test_item_list[-1]] * (args.batch_size - len(test_item_list) + start)
             input_data = _get_topk_feed_data(user, res_items)
-            scores = model(*_get_feed_data(args, input_data, user_triple_set, item_triple_set, 0, args.batch_size))
+            scores = model(input_data, user_triple_set, item_triple_set, 0, args.batch_size)
             for item, score in zip(res_items, scores):
                 item_score_map[item] = score
         item_score_pair_sorted = sorted(item_score_map.items(), key=lambda x: x[1], reverse=True)
@@ -133,21 +109,25 @@ def train_ckan(config, datasets, writer):
     print(f'{config.dataset} dataset has {n_entity} entities and {n_relation} relations')
 
     ipe = np.ceil(train_data.shape[0] / config.batch_size)
-    model, optim, loss_fn = build_model_optim_losses(config, n_entity=n_entity, n_relation=n_relation)
+    model, optim, _ = build_model_optim_losses(config, n_entity=n_entity, n_relation=n_relation)
     for epoch in range(config.n_epochs):
         np.random.shuffle(train_data)
         start = 0
 
         while start < train_data.shape[0]:
-            labels = torch.FloatTensor(train_data[start:start + config.batch_size, 2]).cuda()
-            scores = model(*_get_feed_data(config, train_data, user_triple_set, item_triple_set, start, start + config.batch_size))
-            loss = loss_fn(scores, labels)
+            labels = train_data[start:start + config.batch_size, 2]
+            scores = model(train_data, user_triple_set, item_triple_set, start, start + config.batch_size)
+
+            loss = model.one_step(scores, labels)
+
             optim.zero_grad()
             loss.backward()
             optim.step()
+
             start += config.batch_size
             writer.add_scalar('bce_loss', loss.item(), (epoch * ipe) + (start // config.batch_size))
 
+        # Evaluate every epoch
         eval_auc, eval_f1 = ctr_eval(config, model, valid_data, user_triple_set, item_triple_set)
         test_auc, test_f1 = ctr_eval(config, model, test_data, user_triple_set, item_triple_set)
         writer.add_scalar('valid/auc', eval_auc, epoch)
@@ -158,31 +138,33 @@ def train_ckan(config, datasets, writer):
         ctr_info = 'epoch %.2d    eval auc: %.4f f1: %.4f    test auc: %.4f f1: %.4f'
         logging.info(ctr_info, epoch, eval_auc, eval_f1, test_auc, test_f1)
 
-        topk_eval(config, model, train_data, test_data, user_triple_set, item_triple_set, writer, epoch)
+        # topk_eval(config, model, train_data, test_data, user_triple_set, item_triple_set, writer, epoch)
 
 
 def train_kgin(config, datasets, writer):
-    train_data, eval_data, test_data, n_params, graph, mat_list = datasets
-    adj_mat_list, norm_mat_list, mean_mat_list = mat_list
-
-    print(f'{config.dataset} dataset has {n_params["n_entities"]} entities and {n_params["n_relations"]} relations')
+    train_data, valid_data, test_data, n_entity, n_relation, user_triple_set, item_triple_set = datasets
+    print(f'{config.dataset} dataset has {n_entity} entities and {n_relation} relations')
 
     ipe = np.ceil(train_data.shape[0] / config.batch_size)
-    model, optim, loss_fn = build_model_optim_losses(config, n_entity=n_entity, n_relation=n_relation)
+    model, optim, _ = build_model_optim_losses(config, n_entity=n_entity, n_relation=n_relation)
     for epoch in range(config.n_epochs):
         np.random.shuffle(train_data)
         start = 0
 
         while start < train_data.shape[0]:
-            labels = torch.FloatTensor(train_data[start:start + config.batch_size, 2]).cuda()
-            scores = model(*_get_feed_data(config, train_data, user_triple_set, item_triple_set, start, start + config.batch_size))
-            loss = loss_fn(scores, labels)
+            labels = train_data[start:start + config.batch_size, 2]
+            scores = model(train_data, user_triple_set, item_triple_set, start, start + config.batch_size)
+
+            loss = model.one_step(scores, labels)
+
             optim.zero_grad()
             loss.backward()
             optim.step()
+
             start += config.batch_size
             writer.add_scalar('bce_loss', loss.item(), (epoch * ipe) + (start // config.batch_size))
 
+        # Evaluate every epoch
         eval_auc, eval_f1 = ctr_eval(config, model, valid_data, user_triple_set, item_triple_set)
         test_auc, test_f1 = ctr_eval(config, model, test_data, user_triple_set, item_triple_set)
         writer.add_scalar('valid/auc', eval_auc, epoch)
@@ -193,12 +175,12 @@ def train_kgin(config, datasets, writer):
         ctr_info = 'epoch %.2d    eval auc: %.4f f1: %.4f    test auc: %.4f f1: %.4f'
         logging.info(ctr_info, epoch, eval_auc, eval_f1, test_auc, test_f1)
 
-        topk_eval(config, model, train_data, test_data, user_triple_set, item_triple_set, writer, epoch)
+        # topk_eval(config, model, train_data, test_data, user_triple_set, item_triple_set, writer, epoch)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/KGIN_music.yaml', help='Configuration YAML path')
+    parser.add_argument('--config', type=str, default='configs/CKAN_music.yaml', help='Configuration YAML path')
     args = parser.parse_args()
 
     set_random_seed(712933, 2021)
