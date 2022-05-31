@@ -9,14 +9,19 @@ n_epochs: 20
 batch_size: 1024
 
 dim: 64
-agg: concat
 context_hops: 3
 n_factors: 4        # number of latent factor for user favour
 inverse_r: True
+mess_dropout: True
+mess_dropout_rate: 0.1
+node_dropout: True
+node_dropout_rate: 0.5
+ind: mi
 
-l2_weight: 0.002
-sim_decay:
 lr: 1e-5
+l2_weight: 0.002
+sim_regularity: 1e-4
+
 
 # lr grid: {10−3, 5 × 10−3, 10−2, 5 × 10−2}
 # l2 norm grid: [10-5, 10-4, 10-3, 10-2]

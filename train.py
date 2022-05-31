@@ -31,6 +31,36 @@ def ctr_eval(args, model, data, user_triple_set, item_triple_set):
     return auc, f1
 
 
+def kgin_ctr_eval(args, model, data):
+    auc_list = []
+    f1_list = []
+    model.eval()
+    entity_gcn_emb, user_gcn_emb = model.generate()
+
+    start = 0
+    while start < data.shape[0]:
+        labels = data[start:start + args.batch_size, 2]
+        u_ids = torch.LongTensor(data[start:start + args.batch_size, 0]).cuda()
+        u_g_embeddings = user_gcn_emb[u_ids]
+        i_ids = torch.LongTensor(data[start:start + args.batch_size, 1]).cuda()
+        i_g_embddings = entity_gcn_emb[i_ids]
+
+        i_rate_batch = model.rating(u_g_embeddings, i_g_embddings).detach().cpu()
+        print(i_rate_batch.shape)
+        print(np.min(i_rate_batch), np.max(i_rate_batch))
+
+        auc = roc_auc_score(y_true=labels, y_score=scores)
+        predictions = [1 if i >= 0.5 else 0 for i in scores]
+        f1 = f1_score(y_true=labels, y_pred=predictions)
+        auc_list.append(auc)
+        f1_list.append(f1)
+        start += args.batch_size
+    model.train()
+    auc = float(np.mean(auc_list))
+    f1 = float(np.mean(f1_list))
+    return auc, f1
+
+
 def topk_eval(args, model, train_data, test_data, user_triple_set, item_triple_set, writer, epoch):
     def _show_recall_info(recall_prec_zip):
         res = ""
@@ -142,20 +172,19 @@ def train_ckan(config, datasets, writer):
 
 
 def train_kgin(config, datasets, writer):
-    train_data, valid_data, test_data, n_entity, n_relation, user_triple_set, item_triple_set = datasets
-    print(f'{config.dataset} dataset has {n_entity} entities and {n_relation} relations')
+    train_data, valid_data, test_data, n_params, graph, mat_list = datasets
+    adj_mat_list, norm_mat_list, mean_mat_list = mat_list
+    print(f'{config.dataset} dataset has {n_params["n_entities"]} entities and {n_params["n_relations"]} relations')
 
     ipe = np.ceil(train_data.shape[0] / config.batch_size)
-    model, optim, _ = build_model_optim_losses(config, n_entity=n_entity, n_relation=n_relation)
+    model, optim, _ = build_model_optim_losses(config, n_params=n_params, graph=graph, mean_mat_list=mean_mat_list[0])
+
     for epoch in range(config.n_epochs):
         np.random.shuffle(train_data)
         start = 0
 
         while start < train_data.shape[0]:
-            labels = train_data[start:start + config.batch_size, 2]
-            scores = model(train_data, user_triple_set, item_triple_set, start, start + config.batch_size)
-
-            loss = model.one_step(scores, labels)
+            loss, _, _, cor = model(train_data[start:start + config.batch_size])
 
             optim.zero_grad()
             loss.backward()
@@ -165,8 +194,8 @@ def train_kgin(config, datasets, writer):
             writer.add_scalar('bce_loss', loss.item(), (epoch * ipe) + (start // config.batch_size))
 
         # Evaluate every epoch
-        eval_auc, eval_f1 = ctr_eval(config, model, valid_data, user_triple_set, item_triple_set)
-        test_auc, test_f1 = ctr_eval(config, model, test_data, user_triple_set, item_triple_set)
+        eval_auc, eval_f1 = kgin_ctr_eval(config, model, valid_data)
+        test_auc, test_f1 = kgin_ctr_eval(config, model, test_data)
         writer.add_scalar('valid/auc', eval_auc, epoch)
         writer.add_scalar('valid/f1', eval_f1, epoch)
         writer.add_scalar('test/auc', test_auc, epoch)
@@ -180,7 +209,7 @@ def train_kgin(config, datasets, writer):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/CKAN_music.yaml', help='Configuration YAML path')
+    parser.add_argument('--config', type=str, default='configs/KGIN_music.yaml', help='Configuration YAML path')
     args = parser.parse_args()
 
     set_random_seed(712933, 2021)

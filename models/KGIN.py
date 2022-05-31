@@ -1,11 +1,9 @@
-'''
-Created on July 1, 2020
-PyTorch Implementation of KGIN
-@author: Tinglin Huang (tinglin.huang@zju.edu.cn)
-'''
-__author__ = "huangtinglin"
+"""
+    Created on July 1, 2020
+    PyTorch Implementation of KGIN
+    @author: Tinglin Huang (tinglin.huang@zju.edu.cn)
+"""
 
-import random
 import numpy as np
 import torch
 import torch.nn as nn
@@ -225,8 +223,7 @@ class KGIN(nn.Module):
         self.mess_dropout = args_config.mess_dropout
         self.mess_dropout_rate = args_config.mess_dropout_rate
         self.ind = args_config.ind
-        self.device = torch.device("cuda:" + str(args_config.gpu_id)) if args_config.cuda \
-                                                                      else torch.device("cpu")
+        self.device = torch.device('cuda')
 
         self.adj_mat = adj_mat
         self.graph = graph
@@ -259,13 +256,9 @@ class KGIN(nn.Module):
 
     def _convert_sp_mat_to_sp_tensor(self, X):
         coo = X.tocoo()
-        i = torch.LongTensor([coo.row, coo.col])
+        i = torch.concat((torch.LongTensor(coo.row).unsqueeze(0), torch.LongTensor(coo.col).unsqueeze(0)), dim=0)
         v = torch.from_numpy(coo.data).float()
         return torch.sparse.FloatTensor(i, v, coo.shape)
-
-    def _get_indices(self, X):
-        coo = X.tocoo()
-        return torch.LongTensor([coo.row, coo.col]).t()  # [-1, 2]
 
     def _get_edges(self, graph):
         graph_tensor = torch.tensor(list(graph.edges))  # [-1, 3]
@@ -273,26 +266,28 @@ class KGIN(nn.Module):
         type = graph_tensor[:, -1]  # [-1, 1]
         return index.t().long().to(self.device), type.long().to(self.device)
 
-    def forward(self, batch=None):
-        user = batch['users']
-        pos_item = batch['pos_items']
-        neg_item = batch['neg_items']
+    @staticmethod
+    def _get_feed_data(data):
+        u_ids = torch.LongTensor(data[:, 0]).cuda()
+        i_ids = torch.LongTensor(data[:, 1]).cuda()
+        labels = torch.FloatTensor(data[:, 2]).cuda()
+        return u_ids, i_ids, labels
+
+    def forward(self, batch):
+        u_ids, i_ids, labels = self._get_feed_data(batch)
 
         user_emb = self.all_embed[:self.n_users, :]
         item_emb = self.all_embed[self.n_users:, :]
         # entity_gcn_emb: [n_entity, channel]
         # user_gcn_emb: [n_users, channel]
-        entity_gcn_emb, user_gcn_emb, cor = self.gcn(user_emb,
-                                                     item_emb,
-                                                     self.latent_emb,
-                                                     self.edge_index,
-                                                     self.edge_type,
+        entity_gcn_emb, user_gcn_emb, cor = self.gcn(user_emb, item_emb, self.latent_emb,
+                                                     self.edge_index, self.edge_type,
                                                      self.interact_mat,
                                                      mess_dropout=self.mess_dropout,
                                                      node_dropout=self.node_dropout)
-        u_e = user_gcn_emb[user]
-        pos_e, neg_e = entity_gcn_emb[pos_item], entity_gcn_emb[neg_item]
-        return self.create_bpr_loss(u_e, pos_e, neg_e, cor)
+        u_e = user_gcn_emb[u_ids]
+        i_e = entity_gcn_emb[i_ids]
+        return self.create_bce_loss(u_e, i_e, cor, labels)
 
     def generate(self):
         user_emb = self.all_embed[:self.n_users, :]
@@ -320,6 +315,18 @@ class KGIN(nn.Module):
                        + torch.norm(pos_items) ** 2
                        + torch.norm(neg_items) ** 2) / 2
         emb_loss = self.decay * regularizer / batch_size
-        cor_loss = self.sim_decay * cor
+        cor_loss = float(self.sim_decay) * cor
 
         return mf_loss + emb_loss + cor_loss, mf_loss, emb_loss, cor
+
+    def create_bce_loss(self, users, items, cor, labels):
+        batch_size = users.shape[0]
+        scores = torch.sum(torch.mul(users, items), axis=1)
+        loss = nn.BCEWithLogitsLoss()(scores, labels)
+
+        # cul regularizer
+        regularizer = (torch.norm(users) ** 2 + torch.norm(items) ** 2) / 2
+        emb_loss = self.decay * regularizer / batch_size
+        cor_loss = float(self.sim_decay) * cor
+
+        return loss + emb_loss + cor_loss, loss, emb_loss, cor

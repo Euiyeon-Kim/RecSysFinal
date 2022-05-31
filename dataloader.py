@@ -180,9 +180,9 @@ def load_data(args):
             mean_mat_list[0] = mean_mat_list[0].tocsr()[:n_users, n_users:].tocoo()
 
             return adj_mat_list, norm_mat_list, mean_mat_list
+
         logging.info("================== preparing data ===================")
         train_data, eval_data, test_data, _, _ = load_rating(args)
-
         logging.info('combinating train_cf and kg data ...')
         triplets = _kgin_read_triplets('./data/' + args.dataset + '/kg_final.txt')
 
