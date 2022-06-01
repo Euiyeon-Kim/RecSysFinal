@@ -117,6 +117,8 @@ if __name__ == '__main__':
     test_data = np.load(f'data/{config.dataset}/test_data.npy')
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    model = models.__dict__['CKAN'](config, device, model_define_args).to(device)
+    model = models.__dict__[config.model](config, device, model_define_args)
+    model.load_state_dict(torch.load(f'exps/ckpt/{config.model}_{config.dataset}_best.pth'))
+    model = model.to(device)
 
     topk_eval(config, model, train_data, test_data)
