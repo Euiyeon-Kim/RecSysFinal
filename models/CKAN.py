@@ -19,10 +19,12 @@ import torch.nn.functional as F
 
 
 class CKAN(nn.Module):
-    def __init__(self, opt, device, n_entity, n_relation):
+    def __init__(self, opt, device, model_define_args):
         super(CKAN, self).__init__()
-        self.n_entity = n_entity
-        self.n_relation = n_relation
+        self.n_entity = model_define_args['n_entity']
+        self.n_relation = model_define_args['n_relation']
+        self.user_triple_set = model_define_args['user_triple_sets']
+        self.item_triple_set = model_define_args['item_triple_sets']
 
         self.opt = opt
         self.device = device
@@ -66,36 +68,9 @@ class CKAN(nn.Module):
         items_triple = self._get_triple_tensor(data[:, 1], item_triple_set)
         return items, users_triple, items_triple
 
-    def forward(self, data, user_triple_set, item_triple_set):
-        items, user_triple_set, item_triple_set = self._get_feed_data(data, user_triple_set, item_triple_set)
-        user_embeddings = []
-        user_emb_0 = self.entity_emb(user_triple_set[0][0])     # [batch_size, triple_set_size, dim]
-        user_embeddings.append(user_emb_0.mean(dim=1))          # [batch_size, dim]
-
-        for i in range(self.n_layer):
-            h_emb = self.entity_emb(user_triple_set[0][i])      # [batch_size, triple_set_size, dim]
-            r_emb = self.relation_emb(user_triple_set[1][i])    # [batch_size, triple_set_size, dim]
-            t_emb = self.entity_emb(user_triple_set[2][i])      # [batch_size, triple_set_size, dim]
-            user_emb_i = self._knowledge_attention(h_emb, r_emb, t_emb)          # [batch_size, dim]
-            user_embeddings.append(user_emb_i)
-
-        item_embeddings = []
-        item_emb_origin = self.entity_emb(items)                # [batch size, dim]
-        item_embeddings.append(item_emb_origin)
-
-        for i in range(self.n_layer):
-            h_emb = self.entity_emb(item_triple_set[0][i])      # [batch_size, triple_set_size, dim]
-            r_emb = self.relation_emb(item_triple_set[1][i])    # [batch_size, triple_set_size, dim]
-            t_emb = self.entity_emb(item_triple_set[2][i])      # [batch_size, triple_set_size, dim]
-            item_emb_i = self._knowledge_attention(h_emb, r_emb, t_emb)          # [batch_size, dim]
-            item_embeddings.append(item_emb_i)
-
-        if self.n_layer > 0 and (self.agg == 'sum' or self.agg == 'pool'):
-            item_emb_0 = self.entity_emb(item_triple_set[0][0]) # [batch_size, triple_set_size, dim]
-            item_embeddings.append(item_emb_0.mean(dim=1))                       # [batch_size, dim]
-
-        scores = self.predict(user_embeddings, item_embeddings)
-        return scores
+    def forward(self, data):
+        scores = self.get_scores(data, False)
+        return self.one_step(scores, data)
 
     def predict(self, user_embeddings, item_embeddings):
         e_u = user_embeddings[0]
@@ -141,6 +116,40 @@ class CKAN(nn.Module):
         emb_i = emb_i.sum(dim=1)                                                   # [batch_size, dim]
         return emb_i
 
-    def one_step(self, scores, labels):
+    def one_step(self, scores, data):
+        labels = data[:, 2]
         labels = torch.FloatTensor(labels).to(self.device)
         return self.loss_fn(scores, labels)
+
+    def get_scores(self, data, as_np=True):
+        user_triple_set, item_triple_set = self.user_triple_set, self.item_triple_set
+        items, user_triple_set, item_triple_set = self._get_feed_data(data, user_triple_set, item_triple_set)
+        user_embeddings = []
+        user_emb_0 = self.entity_emb(user_triple_set[0][0])  # [batch_size, triple_set_size, dim]
+        user_embeddings.append(user_emb_0.mean(dim=1))  # [batch_size, dim]
+
+        for i in range(self.n_layer):
+            h_emb = self.entity_emb(user_triple_set[0][i])  # [batch_size, triple_set_size, dim]
+            r_emb = self.relation_emb(user_triple_set[1][i])  # [batch_size, triple_set_size, dim]
+            t_emb = self.entity_emb(user_triple_set[2][i])  # [batch_size, triple_set_size, dim]
+            user_emb_i = self._knowledge_attention(h_emb, r_emb, t_emb)  # [batch_size, dim]
+            user_embeddings.append(user_emb_i)
+
+        item_embeddings = []
+        item_emb_origin = self.entity_emb(items)  # [batch size, dim]
+        item_embeddings.append(item_emb_origin)
+
+        for i in range(self.n_layer):
+            h_emb = self.entity_emb(item_triple_set[0][i])  # [batch_size, triple_set_size, dim]
+            r_emb = self.relation_emb(item_triple_set[1][i])  # [batch_size, triple_set_size, dim]
+            t_emb = self.entity_emb(item_triple_set[2][i])  # [batch_size, triple_set_size, dim]
+            item_emb_i = self._knowledge_attention(h_emb, r_emb, t_emb)  # [batch_size, dim]
+            item_embeddings.append(item_emb_i)
+
+        if self.n_layer > 0 and (self.agg == 'sum' or self.agg == 'pool'):
+            item_emb_0 = self.entity_emb(item_triple_set[0][0])  # [batch_size, triple_set_size, dim]
+            item_embeddings.append(item_emb_0.mean(dim=1))  # [batch_size, dim]
+
+        scores = self.predict(user_embeddings, item_embeddings)
+
+        return scores.detach().cpu().numpy() if as_np else scores

@@ -1,4 +1,5 @@
 """
+    Modified from https://github.com/huangtinglin/Knowledge_Graph_based_Intent_Network/blob/main/modules/KGIN.py
     Created on July 1, 2020
     PyTorch Implementation of KGIN
     @author: Tinglin Huang (tinglin.huang@zju.edu.cn)
@@ -204,29 +205,34 @@ class GraphConv(nn.Module):
 
 
 class KGIN(nn.Module):
-    def __init__(self, data_config, args_config, device, graph, adj_mat):
+    def __init__(self, config, device, model_define_args):
         super(KGIN, self).__init__()
         self.device = device
+        data_config = model_define_args['n_params']
         self.n_users = data_config['n_users']
         self.n_items = data_config['n_items']
         self.n_relations = data_config['n_relations']
         self.n_entities = data_config['n_entities']  # include items
         self.n_nodes = data_config['n_nodes']  # n_users + n_entities
 
-        self.decay = args_config.l2_weight
-        self.sim_decay = args_config.sim_regularity
-        self.emb_size = args_config.dim
-        self.context_hops = args_config.context_hops
-        self.n_factors = args_config.n_factors
-        self.node_dropout = args_config.node_dropout
-        self.node_dropout_rate = args_config.node_dropout_rate
-        self.mess_dropout = args_config.mess_dropout
-        self.mess_dropout_rate = args_config.mess_dropout_rate
-        self.ind = args_config.ind
+        self.decay = config.l2_weight
+        self.sim_decay = config.sim_regularity
+        self.emb_size = config.dim
+        self.context_hops = config.context_hops
+        self.n_factors = config.n_factors
+        self.node_dropout = config.node_dropout
+        self.node_dropout_rate = config.node_dropout_rate
+        self.mess_dropout = config.mess_dropout
+        self.mess_dropout_rate = config.mess_dropout_rate
+        self.ind = config.ind
 
-        self.adj_mat = adj_mat
-        self.graph = graph
-        self.edge_index, self.edge_type = self._get_edges(graph)
+        self.adj_mat = model_define_args['mean_mat']
+        self.graph = model_define_args['graph']
+        self.edge_index, self.edge_type = self._get_edges(self.graph)
+
+        # For BPR loss
+        self.train_user_pos_dict = model_define_args['train_user_pos_dict']
+        self.train_user_neg_dict = model_define_args['train_user_neg_dict']
 
         self._init_weight()
         self.all_embed = nn.Parameter(self.all_embed)
@@ -271,10 +277,15 @@ class KGIN(nn.Module):
         labels = torch.FloatTensor(data[:, 2]).to(self.device)
         return u_ids, i_ids, labels
 
-    def forward(self, batch):
-        user = batch['users']
-        pos_item = batch['pos_items']
-        neg_item = batch['neg_items']
+    def forward(self, data):
+        u_ids = data[:, 0]
+        pos_item = data[:, 1]
+        neg_item = []
+        for u_id in u_ids:
+            neg_cand = self.train_user_neg_dict[u_id]
+            if len(neg_cand) == 0:
+                neg_cand = list(set(np.arange(self.n_items)) - set(self.train_user_pos_dict[u_id]))
+            neg_item.append(np.random.choice(neg_cand, 1)[0])
 
         user_emb = self.all_embed[:self.n_users, :]
         item_emb = self.all_embed[self.n_users:, :]
@@ -287,7 +298,7 @@ class KGIN(nn.Module):
                                                      self.interact_mat,
                                                      mess_dropout=self.mess_dropout,
                                                      node_dropout=self.node_dropout)
-        u_e = user_gcn_emb[user]
+        u_e = user_gcn_emb[u_ids]
         pos_e, neg_e = entity_gcn_emb[pos_item], entity_gcn_emb[neg_item]
         return self.create_bpr_loss(u_e, pos_e, neg_e, cor)
 
@@ -319,7 +330,7 @@ class KGIN(nn.Module):
         emb_loss = self.decay * regularizer / batch_size
         cor_loss = float(self.sim_decay) * cor
 
-        return mf_loss + emb_loss + cor_loss, mf_loss, emb_loss, cor
+        return mf_loss + emb_loss + cor_loss    # mf_loss, emb_loss, cor
 
     def create_bce_loss(self, users, items, cor, labels):
         batch_size = users.shape[0]
@@ -332,3 +343,16 @@ class KGIN(nn.Module):
         cor_loss = float(self.sim_decay) * cor
 
         return loss + emb_loss + cor_loss, loss, emb_loss, cor
+
+    def get_scores(self, data):
+        entity_gcn_emb, user_gcn_emb = self.generate()
+
+        u_ids = torch.LongTensor(data[:, 0]).to(self.device)
+        u_g_embeddings = user_gcn_emb[u_ids]
+        i_ids = torch.LongTensor(data[:, 1]).to(self.device)
+        i_g_embddings = entity_gcn_emb[i_ids]
+
+        i_rate_batch = self.rating(u_g_embeddings, i_g_embddings).detach().cpu()
+        scores = i_rate_batch.diagonal()
+
+        return scores

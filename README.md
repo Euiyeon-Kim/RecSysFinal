@@ -13,3 +13,5 @@
 Diversity?
 NDGC, Recall
 CTR
+
+1. KGIN test auc: 0.8209 f1: 0.7382

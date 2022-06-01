@@ -8,6 +8,7 @@ ratio:
 n_layer: 3
 n_epochs: 20
 batch_size: 1024
+validate_freq: 1
 
 agg: concat
 user_triple_set_size: 8

@@ -8,34 +8,33 @@ from tqdm import tqdm
 import networkx as nx
 import scipy.sparse as sp
 
-"""
-music:  9366 entity 60 relations 15518 triplets
-        1872 users 3846 items 42346 interactions
-book:   77903 entity 25 relations 151500 triplets
-        17860 users 14967 items 139746 interactions
-movie:  102569 entity 32 relations 499474 triplets
-        138159 users 16954 items 13501622 interactions
-"""
 
 DATAINFO = {
     'music': {
         'n_users': 1872,
         'n_items': 3846,
+        'n_interactions': 42346,
         'n_entities': 9366,
+        'n_relations': 60,
+        'n_triplets': 15518,
     },
     'movie': {
         'n_users': 138159,
         'n_items': 16954,
+        'n_interactions': 13501622,
         'n_entities': 102569,
+        'n_relations': 32,
+        'n_triplets': 499474,
     },
     'book': {
         'n_users': 17860,
         'n_items': 14967,
+        'n_interactions': 139746,
         'n_entities': 77903,
+        'n_relations': 25,
+        'n_triplets': 151500,
     }
 }
-
-
 logging.basicConfig(format="[%(asctime)s] %(levelname)s: %(message)s", level=logging.INFO)
 
 
@@ -72,6 +71,13 @@ def load_data(args):
                         triple_sets[obj].append((list(map(int, h)), r, t))
             return triple_sets
 
+        def _ckan_construct_kg(kg_np):
+            logging.info("constructing knowledge graph ...")
+            kg = defaultdict(list)
+            for head, relation, tail in kg_np:
+                kg[head].append((tail, relation))
+            return kg
+
         def _ckan_load_kg(args):
             kg_file = './data/' + args.dataset + '/kg_final'
             logging.info("loading kg file: %s.npy", kg_file)
@@ -82,8 +88,9 @@ def load_data(args):
                 np.save(kg_file + '.npy', kg_np)
             n_entity = len(set(kg_np[:, 0]) | set(kg_np[:, 2]))
             n_relation = len(set(kg_np[:, 1]))
-            kg = construct_kg(kg_np)
+            kg = _ckan_construct_kg(kg_np)
             return n_entity, n_relation, kg
+
         logging.info("================== preparing data ===================")
         train_data, eval_data, test_data, user_init_entity_set, item_init_entity_set = load_rating(args)
         n_entity, n_relation, kg = _ckan_load_kg(args)
@@ -91,8 +98,15 @@ def load_data(args):
         user_triple_sets = _ckan_kg_propagation(args, kg, user_init_entity_set, args.user_triple_set_size, True)
         logging.info("contructing items' kg triple sets ...")
         item_triple_sets = _ckan_kg_propagation(args, kg, item_init_entity_set, args.item_triple_set_size, False)
+        model_define_args = {
+            'n_entity': n_entity,
+            'n_relation': n_relation,
+            'user_triple_sets': user_triple_sets,
+            'item_triple_sets': item_triple_sets
+        }
 
-        return train_data, eval_data, test_data, n_entity, n_relation, user_triple_sets, item_triple_sets
+        logging.info(f'{args.dataset} dataset has {n_entity} entities and {n_relation} relations')
+        return train_data, eval_data, test_data, model_define_args
 
     else:
         n_users = DATAINFO[args.dataset]['n_users']
@@ -125,12 +139,12 @@ def load_data(args):
             ckg_graph = nx.MultiDiGraph()
             rd = defaultdict(list)
 
-            print("Begin to load interaction triples ...")
+            logging.info("Begin to load interaction triples ...")
             for u_id, i_id, pos_neg in tqdm(train_data, ascii=True):
                 if pos_neg == 1:
                     rd[0].append([u_id, i_id])
 
-            print("\nBegin to load knowledge graph triples ...")
+            logging.info("\nBegin to load knowledge graph triples ...")
             for h_id, r_id, t_id in tqdm(triplets, ascii=True):
                 ckg_graph.add_edge(h_id, t_id, key=r_id)
                 rd[r_id].append([h_id, t_id])
@@ -211,8 +225,15 @@ def load_data(args):
             else:
                 train_user_neg_dict[u_id].append(i_id)
 
-        return train_pos_data, train_user_pos_dict, train_user_neg_dict, eval_data, test_data, n_params, graph,\
-               [adj_mat_list, norm_mat_list, mean_mat_list]
+        model_define_args = {
+            'n_params': n_params,
+            'graph': graph,
+            'mean_mat': mean_mat_list[0],
+            'train_user_pos_dict': train_user_pos_dict,
+            'train_user_neg_dict': train_user_neg_dict,
+        }
+        logging.info(f'{args.dataset} dataset has {int(n_entities)} entities and {int(n_relations)} relations')
+        return train_pos_data, eval_data, test_data, model_define_args
 
 
 def dataset_split(rating_np):
@@ -268,14 +289,6 @@ def collaboration_propagation(rating_np, train_indices):
         if item not in item_neighbor_item_dict:
             item_neighbor_item_dict[item] = [item]
     return user_history_item_dict, item_neighbor_item_dict
-
-
-def construct_kg(kg_np):
-    logging.info("constructing knowledge graph ...")
-    kg = defaultdict(list)
-    for head, relation, tail in kg_np:
-        kg[head].append((tail, relation))
-    return kg
 
 
 def load_rating(args):
