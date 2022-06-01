@@ -8,9 +8,9 @@ ratio:                  # train / valid / test
 
 n_epochs: 1000
 batch_size: 1024
-validate_freq: 10
 
 dim: 64
+use_bpr: False
 
 context_hops: 3
 n_factors: 4            # number of latent factor for user favour
@@ -21,6 +21,6 @@ node_dropout: True
 node_dropout_rate: 0.5
 ind: mi
 
-lr: 1e-5
+lr: 1e-4
 l2_weight: 0.002
 sim_regularity: 1e-4

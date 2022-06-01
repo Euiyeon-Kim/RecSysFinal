@@ -208,6 +208,8 @@ class KGIN(nn.Module):
     def __init__(self, config, device, model_define_args):
         super(KGIN, self).__init__()
         self.device = device
+        self.use_bpr = config.use_bpr
+
         data_config = model_define_args['n_params']
         self.n_users = data_config['n_users']
         self.n_items = data_config['n_items']
@@ -278,29 +280,28 @@ class KGIN(nn.Module):
         return u_ids, i_ids, labels
 
     def forward(self, data):
-        u_ids = data[:, 0]
-        pos_item = data[:, 1]
-        neg_item = []
-        for u_id in u_ids:
-            neg_cand = self.train_user_neg_dict[u_id]
-            if len(neg_cand) == 0:
-                neg_cand = list(set(np.arange(self.n_items)) - set(self.train_user_pos_dict[u_id]))
-            neg_item.append(np.random.choice(neg_cand, 1)[0])
-
         user_emb = self.all_embed[:self.n_users, :]
         item_emb = self.all_embed[self.n_users:, :]
 
-        entity_gcn_emb, user_gcn_emb, cor = self.gcn(user_emb,
-                                                     item_emb,
-                                                     self.latent_emb,
-                                                     self.edge_index,
-                                                     self.edge_type,
-                                                     self.interact_mat,
-                                                     mess_dropout=self.mess_dropout,
-                                                     node_dropout=self.node_dropout)
-        u_e = user_gcn_emb[u_ids]
-        pos_e, neg_e = entity_gcn_emb[pos_item], entity_gcn_emb[neg_item]
-        return self.create_bpr_loss(u_e, pos_e, neg_e, cor)
+        entity_gcn_emb, user_gcn_emb, cor = self.gcn(user_emb, item_emb, self.latent_emb,
+                                                     self.edge_index, self.edge_type, self.interact_mat,
+                                                     mess_dropout=self.mess_dropout, node_dropout=self.node_dropout)
+        if self.use_bpr:
+            u_ids = data[:, 0]
+            pos_item = data[:, 1]
+            neg_item = []
+            for u_id in u_ids:
+                neg_cand = self.train_user_neg_dict[u_id]
+                if len(neg_cand) == 0:
+                    neg_cand = list(set(np.arange(self.n_items)) - set(self.train_user_pos_dict[u_id]))
+                neg_item.append(np.random.choice(neg_cand, 1)[0])
+            u_e = user_gcn_emb[u_ids]
+            pos_e, neg_e = entity_gcn_emb[pos_item], entity_gcn_emb[neg_item]
+            return self.create_bpr_loss(u_e, pos_e, neg_e, cor)
+        else:
+            u_e = user_gcn_emb[data[:, 0]]
+            i_e = entity_gcn_emb[data[:, 1]]
+            return self.create_bce_loss(u_e, i_e, cor, data[:, 2])
 
     def generate(self):
         user_emb = self.all_embed[:self.n_users, :]
@@ -335,6 +336,8 @@ class KGIN(nn.Module):
     def create_bce_loss(self, users, items, cor, labels):
         batch_size = users.shape[0]
         scores = torch.sum(torch.mul(users, items), axis=1)
+        labels = torch.FloatTensor(labels).to(self.device)
+
         loss = nn.BCEWithLogitsLoss()(scores, labels)
 
         # cul regularizer
@@ -342,7 +345,7 @@ class KGIN(nn.Module):
         emb_loss = self.decay * regularizer / batch_size
         cor_loss = float(self.sim_decay) * cor
 
-        return loss + emb_loss + cor_loss, loss, emb_loss, cor
+        return loss + emb_loss + cor_loss   # , loss, emb_loss, cor
 
     def get_scores(self, data):
         entity_gcn_emb, user_gcn_emb = self.generate()

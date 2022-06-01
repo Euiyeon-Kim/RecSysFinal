@@ -2,6 +2,7 @@ import os
 import logging
 from collections import defaultdict
 
+import pickle
 import numpy as np
 from tqdm import tqdm
 
@@ -39,6 +40,9 @@ logging.basicConfig(format="[%(asctime)s] %(levelname)s: %(message)s", level=log
 
 
 def load_data(args):
+    logging.info("================== preparing data ===================")
+    train_data, valid_data = np.load(f'data/{args.dataset}/train_data.npy'), np.load(f'data/{args.dataset}/valid_data.npy')
+
     if args.model == 'CKAN':
         def _ckan_kg_propagation(args, kg, init_entity_set, set_size, is_user):
             # triple_sets: [n_obj][n_layer](h,r,t)x[set_size]
@@ -81,18 +85,16 @@ def load_data(args):
         def _ckan_load_kg(args):
             kg_file = './data/' + args.dataset + '/kg_final'
             logging.info("loading kg file: %s.npy", kg_file)
-            if os.path.exists(kg_file + '.npy'):
-                kg_np = np.load(kg_file + '.npy')
-            else:
-                kg_np = np.loadtxt(kg_file + '.txt', dtype=np.int32)
-                np.save(kg_file + '.npy', kg_np)
+            kg_np = np.load(kg_file + '.npy')
             n_entity = len(set(kg_np[:, 0]) | set(kg_np[:, 2]))
             n_relation = len(set(kg_np[:, 1]))
             kg = _ckan_construct_kg(kg_np)
             return n_entity, n_relation, kg
 
         logging.info("================== preparing data ===================")
-        train_data, eval_data, test_data, user_init_entity_set, item_init_entity_set = load_rating(args)
+        user_init_entity_set = pickle.load(open(f"data/{args.dataset}/user_init_entity_set.pkl", 'rb'))
+        item_init_entity_set = pickle.load(open(f"data/{args.dataset}/item_init_entity_set.pkl", 'rb'))
+
         n_entity, n_relation, kg = _ckan_load_kg(args)
         logging.info("contructing users' kg triple sets ...")
         user_triple_sets = _ckan_kg_propagation(args, kg, user_init_entity_set, args.user_triple_set_size, True)
@@ -106,16 +108,16 @@ def load_data(args):
         }
 
         logging.info(f'{args.dataset} dataset has {n_entity} entities and {n_relation} relations')
-        return train_data, eval_data, test_data, model_define_args
+        return train_data, valid_data, model_define_args
 
-    else:
+    elif args.model == 'KGIN':
         n_users = DATAINFO[args.dataset]['n_users']
         n_items = DATAINFO[args.dataset]['n_items']
         n_entities = DATAINFO[args.dataset]['n_entities']
         n_nodes = n_entities + n_items
 
         def _kgin_read_triplets(file_name):
-            can_triplets_np = np.loadtxt(file_name, dtype=np.int32)
+            can_triplets_np = np.load(file_name)
             can_triplets_np = np.unique(can_triplets_np, axis=0)
 
             if args.inverse_r:          # 원래 relation * 2 + 1
@@ -196,10 +198,8 @@ def load_data(args):
 
             return adj_mat_list, norm_mat_list, mean_mat_list
 
-        logging.info("================== preparing data ===================")
-        train_data, eval_data, test_data, _, _ = load_rating(args)
         logging.info('combinating train_cf and kg data ...')
-        triplets = _kgin_read_triplets('./data/' + args.dataset + '/kg_final.txt')
+        triplets = _kgin_read_triplets('./data/' + args.dataset + '/kg_final.npy')
 
         logging.info('building the graph ...')
         graph, relation_dict = _kgin_build_graph(train_data, triplets)
@@ -233,70 +233,8 @@ def load_data(args):
             'train_user_neg_dict': train_user_neg_dict,
         }
         logging.info(f'{args.dataset} dataset has {int(n_entities)} entities and {int(n_relations)} relations')
-        return train_pos_data, eval_data, test_data, model_define_args
+        return train_pos_data, valid_data, model_define_args
 
-
-def dataset_split(rating_np):
-    logging.info("splitting dataset to 6:2:2 ...")
-    # train:eval:test = 6:2:2
-    eval_ratio = 0.2
-    test_ratio = 0.2
-    n_ratings = rating_np.shape[0]
-
-    eval_indices = np.random.choice(n_ratings, size=int(n_ratings * eval_ratio), replace=False)
-    left = set(range(n_ratings)) - set(eval_indices)
-    test_indices = np.random.choice(list(left), size=int(n_ratings * test_ratio), replace=False)
-    train_indices = list(left - set(test_indices))
-
-    user_init_entity_set, item_init_entity_set = collaboration_propagation(rating_np, train_indices)
-
-    train_indices = [i for i in train_indices if rating_np[i][0] in user_init_entity_set.keys()]
-    eval_indices = [i for i in eval_indices if rating_np[i][0] in user_init_entity_set.keys()]
-    test_indices = [i for i in test_indices if rating_np[i][0] in user_init_entity_set.keys()]
-    train_data = rating_np[train_indices]
-    eval_data = rating_np[eval_indices]
-    test_data = rating_np[test_indices]
-
-    return train_data, eval_data, test_data, user_init_entity_set, item_init_entity_set
-
-
-def collaboration_propagation(rating_np, train_indices):
-    logging.info("contructing users' initial entity set ...")
-    user_history_item_dict = dict()
-    item_history_user_dict = dict()
-    item_neighbor_item_dict = dict()
-    for i in train_indices:
-        user = rating_np[i][0]
-        item = rating_np[i][1]
-        rating = rating_np[i][2]
-        if rating == 1:
-            if user not in user_history_item_dict:
-                user_history_item_dict[user] = []
-            user_history_item_dict[user].append(item)
-            if item not in item_history_user_dict:
-                item_history_user_dict[item] = []
-            item_history_user_dict[item].append(user)
-
-    logging.info("contructing items' initial entity set ...")
-    for item in item_history_user_dict.keys():
-        item_nerghbor_item = []
-        for user in item_history_user_dict[item]:
-            item_nerghbor_item = np.concatenate((item_nerghbor_item, user_history_item_dict[user]))
-        item_neighbor_item_dict[item] = list(set(item_nerghbor_item))
-
-    item_list = set(rating_np[:, 1])
-    for item in item_list:
-        if item not in item_neighbor_item_dict:
-            item_neighbor_item_dict[item] = [item]
-    return user_history_item_dict, item_neighbor_item_dict
-
-
-def load_rating(args):
-    rating_file = './data/' + args.dataset + '/ratings_final'
-    logging.info("load rating file: %s.npy", rating_file)
-    if os.path.exists(rating_file + '.npy'):
-        rating_np = np.load(rating_file + '.npy')
     else:
-        rating_np = np.loadtxt(rating_file + '.txt', dtype=np.int32)
-        np.save(rating_file + '.npy', rating_np)
-    return dataset_split(rating_np)
+        raise NotImplementedError(f'You need to implement data prcessing for {args.model}')
+
