@@ -272,20 +272,24 @@ class KGIN(nn.Module):
         return u_ids, i_ids, labels
 
     def forward(self, batch):
-        u_ids, i_ids, labels = self._get_feed_data(batch)
+        user = batch['users']
+        pos_item = batch['pos_items']
+        neg_item = batch['neg_items']
 
         user_emb = self.all_embed[:self.n_users, :]
         item_emb = self.all_embed[self.n_users:, :]
-        # entity_gcn_emb: [n_entity, channel]
-        # user_gcn_emb: [n_users, channel]
-        entity_gcn_emb, user_gcn_emb, cor = self.gcn(user_emb, item_emb, self.latent_emb,
-                                                     self.edge_index, self.edge_type,
+
+        entity_gcn_emb, user_gcn_emb, cor = self.gcn(user_emb,
+                                                     item_emb,
+                                                     self.latent_emb,
+                                                     self.edge_index,
+                                                     self.edge_type,
                                                      self.interact_mat,
                                                      mess_dropout=self.mess_dropout,
                                                      node_dropout=self.node_dropout)
-        u_e = user_gcn_emb[u_ids]
-        i_e = entity_gcn_emb[i_ids]
-        return self.create_bce_loss(u_e, i_e, cor, labels)
+        u_e = user_gcn_emb[user]
+        pos_e, neg_e = entity_gcn_emb[pos_item], entity_gcn_emb[neg_item]
+        return self.create_bpr_loss(u_e, pos_e, neg_e, cor)
 
     def generate(self):
         user_emb = self.all_embed[:self.n_users, :]

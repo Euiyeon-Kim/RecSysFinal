@@ -176,19 +176,28 @@ def train_ckan(config, datasets, writer, device):
 
 
 def train_kgin(config, datasets, writer, device):
-    train_data, valid_data, test_data, n_params, graph, mat_list = datasets
+    train_pos_data, train_user_pos_dict, train_user_neg_dict, valid_data, test_data, n_params, graph, mat_list = datasets
     adj_mat_list, norm_mat_list, mean_mat_list = mat_list
     logging.info(f'{config.dataset} dataset has {n_params["n_entities"]} entities and {n_params["n_relations"]} relations')
 
-    ipe = np.ceil(train_data.shape[0] / config.batch_size)
+    ipe = np.ceil(train_pos_data.shape[0] / config.batch_size)
     model, optim, _ = build_model_optim_losses(config, device, n_params=n_params, graph=graph, mean_mat_list=mean_mat_list[0])
 
     for epoch in range(config.n_epochs):
-        np.random.shuffle(train_data)
+        np.random.shuffle(train_pos_data)
         start = 0
 
-        while start < train_data.shape[0]:
-            loss, _, _, cor = model(train_data[start:start + config.batch_size])
+        while start < train_pos_data.shape[0]:
+            batch_user = train_pos_data[start:start + config.batch_size, 0]
+            batch_pos = train_pos_data[start:start + config.batch_size, 1]
+            batch_neg = []
+            for u_id in batch_user:
+                neg_cand = train_user_neg_dict[u_id]
+                if len(neg_cand) == 0:
+                    neg_cand = list(set(np.arange(n_params['n_items'])) - set(train_user_pos_dict[u_id]))
+                batch_neg.append(np.random.choice(neg_cand, 1)[0])
+            data = {'users': batch_user, 'pos_items': batch_pos, 'neg_items': batch_neg}
+            loss, _, _, cor = model(data)
 
             optim.zero_grad()
             loss.backward()

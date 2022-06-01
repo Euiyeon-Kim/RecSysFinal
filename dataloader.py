@@ -202,7 +202,16 @@ def load_data(args):
             'n_relations': int(n_relations)
         }
 
-        return train_data, eval_data, test_data, n_params, graph, \
+        train_pos_data = np.array(list(filter(lambda x: x[2] == 1, train_data)))
+        train_user_pos_dict = defaultdict(list)
+        train_user_neg_dict = defaultdict(list)
+        for u_id, i_id, r in train_data:
+            if r == 1:
+                train_user_pos_dict[u_id].append(i_id)
+            else:
+                train_user_neg_dict[u_id].append(i_id)
+
+        return train_pos_data, train_user_pos_dict, train_user_neg_dict, eval_data, test_data, n_params, graph,\
                [adj_mat_list, norm_mat_list, mean_mat_list]
 
 
