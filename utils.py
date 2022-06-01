@@ -32,7 +32,7 @@ def prepare_train(config_path):
     exp_name = f'{config.model}_{config.dataset}'
     config.exp_name = exp_name
     os.makedirs(f'exps/logs/{exp_name}', exist_ok=True)
-    os.makedirs(f'exps/chkpts/{exp_name}', exist_ok=True)
+    os.makedirs(f'exps/ckpt', exist_ok=True)
     writer = SummaryWriter(f'exps/logs/{exp_name}')
     return config, writer
 

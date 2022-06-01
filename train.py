@@ -64,7 +64,7 @@ def train(config, datasets, writer, device):
         # Save best weight
         if max_auc < eval_auc:
             max_auc = eval_auc
-            torch.save(model.state_dict(), f'exps/chkpts/{config.exp_name}_best.pth')
+            torch.save(model.state_dict(), f'exps/ckpt/{config.exp_name}_best.pth')
 
 
 if __name__ == '__main__':

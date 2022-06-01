@@ -2,10 +2,17 @@ import logging
 import argparse
 from collections import defaultdict
 
+import yaml
 import numpy as np
+from dotmap import DotMap
+
+import torch
+
+import models
+from dataloader import load_data
 
 
-def topk_eval(args, model, train_data, test_data):
+def topk_eval(opt, model, train_data, test_data):
     def _show_rank_info(rank_zip):
         res = ""
         for k, rec, prec, f1, ndcg in rank_zip:
@@ -61,19 +68,19 @@ def topk_eval(args, model, train_data, test_data):
         test_item_list = list(item_set-set(train_record[user]))
         item_score_map = dict()
         start = 0
-        while start + args.batch_size <= len(test_item_list):
-            items = test_item_list[start:start + args.batch_size]
+        while start + opt.batch_size <= len(test_item_list):
+            items = test_item_list[start:start + opt.batch_size]
             input_data = _get_topk_feed_data(user, items)
-            scores = model.get_scores(input_data[0:args.batch_size, :])
+            scores = model.get_scores(input_data[0:opt.batch_size, :])
             for item, score in zip(items, scores):
                 item_score_map[item] = score
-            start += args.batch_size
+            start += opt.batch_size
 
         # padding the last incomplete mini-batch if exists
         if start < len(test_item_list):
-            res_items = test_item_list[start:] + [test_item_list[-1]] * (args.batch_size - len(test_item_list) + start)
+            res_items = test_item_list[start:] + [test_item_list[-1]] * (opt.batch_size - len(test_item_list) + start)
             input_data = _get_topk_feed_data(user, res_items)
-            scores = model.get_scores(input_data[0:args.batch_size, :])
+            scores = model.get_scores(input_data[0:opt.batch_size, :])
             for item, score in zip(res_items, scores):
                 item_score_map[item] = score
 
@@ -99,7 +106,17 @@ def topk_eval(args, model, train_data, test_data):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='configs/CKAN_music.yaml', help='Configuration YAML path')
-    parser.add_argument('--topK', default=True, action='store_true', help='Do top-k evaluation')
     args = parser.parse_args()
 
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
+    config = DotMap(config)
 
+    _, _, model_define_args = load_data(config)
+    train_data = np.load(f'data/{config.dataset}/train_data.npy')
+    test_data = np.load(f'data/{config.dataset}/test_data.npy')
+
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    model = models.__dict__['CKAN'](config, device, model_define_args).to(device)
+
+    topk_eval(config, model, train_data, test_data)
