@@ -42,14 +42,13 @@ def kgin_ctr_eval(args, model, data):
     start = 0
     while start < data.shape[0]:
         labels = data[start:start + args.batch_size, 2]
-        u_ids = torch.LongTensor(data[start:start + args.batch_size, 0]).cuda()
+        u_ids = torch.LongTensor(data[start:start + args.batch_size, 0]).to(model.device)
         u_g_embeddings = user_gcn_emb[u_ids]
-        i_ids = torch.LongTensor(data[start:start + args.batch_size, 1]).cuda()
+        i_ids = torch.LongTensor(data[start:start + args.batch_size, 1]).to(model.device)
         i_g_embddings = entity_gcn_emb[i_ids]
 
         i_rate_batch = model.rating(u_g_embeddings, i_g_embddings).detach().cpu()
-        print(i_rate_batch.shape)
-        print(np.min(i_rate_batch), np.max(i_rate_batch))
+        scores = i_rate_batch.diagonal()
 
         auc = roc_auc_score(y_true=labels, y_score=scores)
         predictions = [1 if i >= 0.5 else 0 for i in scores]
@@ -57,6 +56,7 @@ def kgin_ctr_eval(args, model, data):
         auc_list.append(auc)
         f1_list.append(f1)
         start += args.batch_size
+
     model.train()
     auc = float(np.mean(auc_list))
     f1 = float(np.mean(f1_list))
@@ -211,7 +211,7 @@ def train_kgin(config, datasets, writer, device):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/CKAN_music.yaml', help='Configuration YAML path')
+    parser.add_argument('--config', type=str, default='configs/KGIN_music.yaml', help='Configuration YAML path')
     parser.add_argument('--topK', default=False, action='store_true', help='Do top-k evaluation')
     args = parser.parse_args()
 
@@ -227,7 +227,7 @@ if __name__ == '__main__':
     if config.model == 'CKAN':
         train_ckan(config, datasets, writer, device)
     elif config.model == 'KGIN':
-        train_kgin(config, datasets, writer)
+        train_kgin(config, datasets, writer, device)
 
 
 

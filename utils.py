@@ -46,7 +46,7 @@ def build_model_optim_losses(config, device, **kwargs):
         loss_func = nn.BCELoss()
 
     elif config.model == 'KGIN':
-        model = models.__dict__['KGIN'](kwargs['n_params'], config, device, kwargs['graph'], kwargs['mean_mat_list']).cuda()
+        model = models.__dict__['KGIN'](kwargs['n_params'], config, device, kwargs['graph'], kwargs['mean_mat_list']).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=float(config.lr))
         loss_func = nn.BCELoss()
 

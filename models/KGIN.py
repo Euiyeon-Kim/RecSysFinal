@@ -204,9 +204,9 @@ class GraphConv(nn.Module):
 
 
 class KGIN(nn.Module):
-    def __init__(self, data_config, args_config, graph, adj_mat):
+    def __init__(self, data_config, args_config, device, graph, adj_mat):
         super(KGIN, self).__init__()
-
+        self.device = device
         self.n_users = data_config['n_users']
         self.n_items = data_config['n_items']
         self.n_relations = data_config['n_relations']
@@ -223,7 +223,6 @@ class KGIN(nn.Module):
         self.mess_dropout = args_config.mess_dropout
         self.mess_dropout_rate = args_config.mess_dropout_rate
         self.ind = args_config.ind
-        self.device = torch.device('cuda')
 
         self.adj_mat = adj_mat
         self.graph = graph
@@ -266,11 +265,10 @@ class KGIN(nn.Module):
         type = graph_tensor[:, -1]  # [-1, 1]
         return index.t().long().to(self.device), type.long().to(self.device)
 
-    @staticmethod
-    def _get_feed_data(data):
-        u_ids = torch.LongTensor(data[:, 0]).cuda()
-        i_ids = torch.LongTensor(data[:, 1]).cuda()
-        labels = torch.FloatTensor(data[:, 2]).cuda()
+    def _get_feed_data(self, data):
+        u_ids = torch.LongTensor(data[:, 0]).to(self.device)
+        i_ids = torch.LongTensor(data[:, 1]).to(self.device)
+        labels = torch.FloatTensor(data[:, 2]).to(self.device)
         return u_ids, i_ids, labels
 
     def forward(self, batch):
