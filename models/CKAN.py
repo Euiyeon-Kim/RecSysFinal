@@ -19,12 +19,13 @@ import torch.nn.functional as F
 
 
 class CKAN(nn.Module):
-    def __init__(self, opt, n_entity, n_relation):
+    def __init__(self, opt, device, n_entity, n_relation):
         super(CKAN, self).__init__()
         self.n_entity = n_entity
         self.n_relation = n_relation
 
         self.opt = opt
+        self.device = device
         self.dim = opt.dim
         self.agg = opt.agg
         self.n_layer = opt.n_layer
@@ -51,22 +52,22 @@ class CKAN(nn.Module):
             r.append(torch.LongTensor([triple_set[obj][i][1] for obj in objs]))
             t.append(torch.LongTensor([triple_set[obj][i][2] for obj in objs]))
 
-            h = list(map(lambda x: x.cuda(), h))
-            r = list(map(lambda x: x.cuda(), r))
-            t = list(map(lambda x: x.cuda(), t))
+            h = list(map(lambda x: x.to(self.device), h))
+            r = list(map(lambda x: x.to(self.device), r))
+            t = list(map(lambda x: x.to(self.device), t))
         return [h, r, t]
 
-    def _get_feed_data(self, data, user_triple_set, item_triple_set, start, end):
+    def _get_feed_data(self, data, user_triple_set, item_triple_set):
         # origin item
-        items = torch.LongTensor(data[start:end, 1]).cuda()
+        items = torch.LongTensor(data[:, 1]).to(self.device)
 
         # kg propagation embeddings
-        users_triple = self._get_triple_tensor(data[start:end, 0], user_triple_set)
-        items_triple = self._get_triple_tensor(data[start:end, 1], item_triple_set)
+        users_triple = self._get_triple_tensor(data[:, 0], user_triple_set)
+        items_triple = self._get_triple_tensor(data[:, 1], item_triple_set)
         return items, users_triple, items_triple
 
-    def forward(self, data, user_triple_set, item_triple_set, start, end):
-        items, user_triple_set, item_triple_set = self._get_feed_data(data, user_triple_set, item_triple_set, start, end)
+    def forward(self, data, user_triple_set, item_triple_set):
+        items, user_triple_set, item_triple_set = self._get_feed_data(data, user_triple_set, item_triple_set)
         user_embeddings = []
         user_emb_0 = self.entity_emb(user_triple_set[0][0])     # [batch_size, triple_set_size, dim]
         user_embeddings.append(user_emb_0.mean(dim=1))          # [batch_size, dim]
@@ -134,16 +135,12 @@ class CKAN(nn.Module):
                 nn.init.xavier_uniform_(layer.weight)
 
     def _knowledge_attention(self, h_emb, r_emb, t_emb):
-        # [batch_size, triple_set_size]
-        att_weights = self.attention(torch.cat((h_emb, r_emb), dim=-1)).squeeze(-1)
-        # [batch_size, triple_set_size]
-        att_weights_norm = F.softmax(att_weights, dim=-1)
-        # [batch_size, triple_set_size, dim]
-        emb_i = torch.mul(att_weights_norm.unsqueeze(-1), t_emb)
-        # [batch_size, dim]
-        emb_i = emb_i.sum(dim=1)
+        att_weights = self.attention(torch.cat((h_emb, r_emb), dim=-1)).squeeze(-1)     # [batch_size, triple_set_size]
+        att_weights_norm = F.softmax(att_weights, dim=-1)                               # [batch_size, triple_set_size]
+        emb_i = torch.mul(att_weights_norm.unsqueeze(-1), t_emb)                   # [batch_size, triple_set_size, dim]
+        emb_i = emb_i.sum(dim=1)                                                   # [batch_size, dim]
         return emb_i
 
     def one_step(self, scores, labels):
-        labels = torch.FloatTensor(labels).cuda()
+        labels = torch.FloatTensor(labels).to(self.device)
         return self.loss_fn(scores, labels)

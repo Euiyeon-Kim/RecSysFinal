@@ -1,6 +1,6 @@
 import os
 import logging
-import collections
+from collections import defaultdict
 
 import numpy as np
 from tqdm import tqdm
@@ -43,7 +43,7 @@ def load_data(args):
     if args.model == 'CKAN':
         def _ckan_kg_propagation(args, kg, init_entity_set, set_size, is_user):
             # triple_sets: [n_obj][n_layer](h,r,t)x[set_size]
-            triple_sets = collections.defaultdict(list)
+            triple_sets = defaultdict(list)
             for obj in init_entity_set.keys():
                 if is_user and args.n_layer == 0:
                     n_layer = 1
@@ -84,7 +84,6 @@ def load_data(args):
             n_relation = len(set(kg_np[:, 1]))
             kg = construct_kg(kg_np)
             return n_entity, n_relation, kg
-
         logging.info("================== preparing data ===================")
         train_data, eval_data, test_data, user_init_entity_set, item_init_entity_set = load_rating(args)
         n_entity, n_relation, kg = _ckan_load_kg(args)
@@ -92,7 +91,9 @@ def load_data(args):
         user_triple_sets = _ckan_kg_propagation(args, kg, user_init_entity_set, args.user_triple_set_size, True)
         logging.info("contructing items' kg triple sets ...")
         item_triple_sets = _ckan_kg_propagation(args, kg, item_init_entity_set, args.item_triple_set_size, False)
+
         return train_data, eval_data, test_data, n_entity, n_relation, user_triple_sets, item_triple_sets
+
     else:
         n_users = DATAINFO[args.dataset]['n_users']
         n_items = DATAINFO[args.dataset]['n_items']
@@ -122,7 +123,7 @@ def load_data(args):
 
         def _kgin_build_graph(train_data, triplets):
             ckg_graph = nx.MultiDiGraph()
-            rd = collections.defaultdict(list)
+            rd = defaultdict(list)
 
             print("Begin to load interaction triples ...")
             for u_id, i_id, pos_neg in tqdm(train_data, ascii=True):
@@ -262,7 +263,7 @@ def collaboration_propagation(rating_np, train_indices):
 
 def construct_kg(kg_np):
     logging.info("constructing knowledge graph ...")
-    kg = collections.defaultdict(list)
+    kg = defaultdict(list)
     for head, relation, tail in kg_np:
         kg[head].append((tail, relation))
     return kg

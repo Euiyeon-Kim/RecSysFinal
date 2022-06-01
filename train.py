@@ -17,9 +17,11 @@ def ctr_eval(args, model, data, user_triple_set, item_triple_set):
     start = 0
     while start < data.shape[0]:
         labels = data[start:start + args.batch_size, 2]
-        scores = model(data, user_triple_set, item_triple_set, start, start + args.batch_size)
+        scores = model(data[start:start + args.batch_size], user_triple_set, item_triple_set)
         scores = scores.detach().cpu().numpy()
+
         auc = roc_auc_score(y_true=labels, y_score=scores)
+
         predictions = [1 if i >= 0.5 else 0 for i in scores]
         f1 = f1_score(y_true=labels, y_pred=predictions)
         auc_list.append(auc)
@@ -94,7 +96,7 @@ def topk_eval(args, model, train_data, test_data, user_triple_set, item_triple_s
     recall_list = {k: [] for k in k_list}
     prec_list = {k: [] for k in k_list}
 
-    item_set = set(train_data[:,1].tolist() + test_data[:,1].tolist())
+    item_set = set(train_data[:, 1].tolist() + test_data[:, 1].tolist())
     train_record = _get_user_record(train_data, True)
     test_record = _get_user_record(test_data, False)
     user_list = list(set(train_record.keys()) & set(test_record.keys()))
@@ -110,7 +112,7 @@ def topk_eval(args, model, train_data, test_data, user_triple_set, item_triple_s
         while start + args.batch_size <= len(test_item_list):
             items = test_item_list[start:start + args.batch_size]
             input_data = _get_topk_feed_data(user, items)
-            scores = model(input_data, user_triple_set, item_triple_set, 0, args.batch_size)
+            scores = model(input_data[0:args.batch_size, :], user_triple_set, item_triple_set)
             for item, score in zip(items, scores):
                 item_score_map[item] = score
             start += args.batch_size
@@ -118,7 +120,7 @@ def topk_eval(args, model, train_data, test_data, user_triple_set, item_triple_s
         if start < len(test_item_list):
             res_items = test_item_list[start:] + [test_item_list[-1]] * (args.batch_size - len(test_item_list) + start)
             input_data = _get_topk_feed_data(user, res_items)
-            scores = model(input_data, user_triple_set, item_triple_set, 0, args.batch_size)
+            scores = model(input_data[0:args.batch_size, :], user_triple_set, item_triple_set)
             for item, score in zip(res_items, scores):
                 item_score_map[item] = score
         item_score_pair_sorted = sorted(item_score_map.items(), key=lambda x: x[1], reverse=True)
@@ -134,19 +136,20 @@ def topk_eval(args, model, train_data, test_data, user_triple_set, item_triple_s
     _show_recall_info(zip(k_list, recall, precision))
 
 
-def train_ckan(config, datasets, writer):
+def train_ckan(config, datasets, writer, device):
     train_data, valid_data, test_data, n_entity, n_relation, user_triple_set, item_triple_set = datasets
-    print(f'{config.dataset} dataset has {n_entity} entities and {n_relation} relations')
+    logging.info(f'{config.dataset} dataset has {n_entity} entities and {n_relation} relations')
 
     ipe = np.ceil(train_data.shape[0] / config.batch_size)
-    model, optim, _ = build_model_optim_losses(config, n_entity=n_entity, n_relation=n_relation)
+    model, optim, _ = build_model_optim_losses(config, device, n_entity=n_entity, n_relation=n_relation)
     for epoch in range(config.n_epochs):
         np.random.shuffle(train_data)
         start = 0
 
         while start < train_data.shape[0]:
-            labels = train_data[start:start + config.batch_size, 2]
-            scores = model(train_data, user_triple_set, item_triple_set, start, start + config.batch_size)
+            data = train_data[start:start + config.batch_size, :]
+            labels = data[:, 2]
+            scores = model(data, user_triple_set, item_triple_set)
 
             loss = model.one_step(scores, labels)
 
@@ -168,16 +171,17 @@ def train_ckan(config, datasets, writer):
         ctr_info = 'epoch %.2d    eval auc: %.4f f1: %.4f    test auc: %.4f f1: %.4f'
         logging.info(ctr_info, epoch, eval_auc, eval_f1, test_auc, test_f1)
 
-        # topk_eval(config, model, train_data, test_data, user_triple_set, item_triple_set, writer, epoch)
+        if config.topK:
+            topk_eval(config, model, train_data, test_data, user_triple_set, item_triple_set, writer, epoch)
 
 
-def train_kgin(config, datasets, writer):
+def train_kgin(config, datasets, writer, device):
     train_data, valid_data, test_data, n_params, graph, mat_list = datasets
     adj_mat_list, norm_mat_list, mean_mat_list = mat_list
-    print(f'{config.dataset} dataset has {n_params["n_entities"]} entities and {n_params["n_relations"]} relations')
+    logging.info(f'{config.dataset} dataset has {n_params["n_entities"]} entities and {n_params["n_relations"]} relations')
 
     ipe = np.ceil(train_data.shape[0] / config.batch_size)
-    model, optim, _ = build_model_optim_losses(config, n_params=n_params, graph=graph, mean_mat_list=mean_mat_list[0])
+    model, optim, _ = build_model_optim_losses(config, device, n_params=n_params, graph=graph, mean_mat_list=mean_mat_list[0])
 
     for epoch in range(config.n_epochs):
         np.random.shuffle(train_data)
@@ -204,12 +208,11 @@ def train_kgin(config, datasets, writer):
         ctr_info = 'epoch %.2d    eval auc: %.4f f1: %.4f    test auc: %.4f f1: %.4f'
         logging.info(ctr_info, epoch, eval_auc, eval_f1, test_auc, test_f1)
 
-        # topk_eval(config, model, train_data, test_data, user_triple_set, item_triple_set, writer, epoch)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/KGIN_music.yaml', help='Configuration YAML path')
+    parser.add_argument('--config', type=str, default='configs/CKAN_music.yaml', help='Configuration YAML path')
+    parser.add_argument('--topK', default=False, action='store_true', help='Do top-k evaluation')
     args = parser.parse_args()
 
     set_random_seed(712933, 2021)
@@ -218,9 +221,11 @@ if __name__ == '__main__':
     # Load dataset
     datasets = load_data(config)
 
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
     # Train
     if config.model == 'CKAN':
-        train_ckan(config, datasets, writer)
+        train_ckan(config, datasets, writer, device)
     elif config.model == 'KGIN':
         train_kgin(config, datasets, writer)
 

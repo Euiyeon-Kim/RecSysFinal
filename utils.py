@@ -33,25 +33,20 @@ def prepare_train(config_path):
     config.exp_name = exp_name
     os.makedirs(f'exps/logs/{exp_name}', exist_ok=True)
     writer = SummaryWriter(f'exps/logs/{exp_name}')
-    os.makedirs(f'exps/configs', exist_ok=True)
-    shutil.copy(config_path, f"exps/configs/{exp_name}.yaml")
     return config, writer
 
 
-def build_model_optim_losses(config, **kwargs):
+def build_model_optim_losses(config, device, **kwargs):
     model, optimizer, loss_func = None, None, None
 
     if config.model == 'CKAN':
-        model = models.__dict__['CKAN'](config, kwargs['n_entity'], kwargs['n_relation']).cuda()
-        optimizer = torch.optim.Adam(
-            filter(lambda p: p.requires_grad, model.parameters()),
-            lr=float(config.lr),
-            weight_decay=float(config.l2_weight),
-        )
+        model = models.__dict__['CKAN'](config, device, kwargs['n_entity'], kwargs['n_relation']).to(device)
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
+                                     lr=float(config.lr), weight_decay=float(config.l2_weight))
         loss_func = nn.BCELoss()
 
     elif config.model == 'KGIN':
-        model = models.__dict__['KGIN'](kwargs['n_params'], config, kwargs['graph'], kwargs['mean_mat_list']).cuda()
+        model = models.__dict__['KGIN'](kwargs['n_params'], config, device, kwargs['graph'], kwargs['mean_mat_list']).cuda()
         optimizer = torch.optim.Adam(model.parameters(), lr=float(config.lr))
         loss_func = nn.BCELoss()
 
