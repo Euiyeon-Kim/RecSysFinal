@@ -91,7 +91,6 @@ def load_data(args):
             kg = _ckan_construct_kg(kg_np)
             return n_entity, n_relation, kg
 
-        logging.info("================== preparing data ===================")
         user_init_entity_set = pickle.load(open(f"data/{args.dataset}/user_init_entity_set.pkl", 'rb'))
         item_init_entity_set = pickle.load(open(f"data/{args.dataset}/item_init_entity_set.pkl", 'rb'))
 

@@ -5,17 +5,17 @@ ratio:
   - 0.2
   - 0.2
 
-n_layer: 3
+n_layer: 2
 n_epochs: 20
 batch_size: 1024
 
 agg: concat
-user_triple_set_size: 8
+user_triple_set_size: 16
 item_triple_set_size: 64
 dim: 64
 
-l2_weight: 0.002
-lr: 1e-5
+lr: 0.002
+l2_weight: 1e-5
 
 # lr grid: {10−3, 5 × 10−3, 10−2, 5 × 10−2}
 # l2 norm grid: [10-5, 10-4, 10-3, 10-2]
