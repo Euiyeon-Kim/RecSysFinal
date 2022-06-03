@@ -176,7 +176,7 @@ def load_data(args):
                 return norm_adj.tocoo()
 
             adj_mat_list = []
-            print("Begin to build sparse relation matrix ...")
+            logging.info("Begin to build sparse relation matrix ...")
             for r_id in tqdm(relation_dict.keys()):
                 np_mat = np.array(relation_dict[r_id])
                 if r_id == 0:
@@ -233,6 +233,53 @@ def load_data(args):
         }
         logging.info(f'{args.dataset} dataset has {int(n_entities)} entities and {int(n_relations)} relations')
         return train_pos_data, valid_data, model_define_args
+
+    elif args.model == 'KGNNLS':
+        def _kgnnls_load_kg(args):
+            kg_file = './data/' + args.dataset + '/kg_final'
+            logging.info("loading kg file: %s.npy", kg_file)
+            kg_np = np.load(kg_file + '.npy')
+            n_entity = len(set(kg_np[:, 0]) | set(kg_np[:, 2]))
+            n_relation = len(set(kg_np[:, 1]))
+            kg = _kgnnls_construct_kg(kg_np)
+            adj_entity, adj_relation = _kgnnls_construct_adj(args, kg, n_entity)
+            return n_entity, n_relation, adj_entity, adj_relation
+
+        def _kgnnls_construct_kg(kg_np):
+            logging.info("constructing knowledge graph ...")
+            kg = defaultdict(list)
+            for head, relation, tail in kg_np:
+                kg[head].append((tail, relation))
+                kg[tail].append((head, relation))
+            return kg
+
+        def _kgnnls_construct_adj(args, kg, entity_num):
+            adj_entity = np.zeros([entity_num, args.neighbor_sample_size], dtype=np.int64)
+            adj_relation = np.zeros([entity_num, args.neighbor_sample_size], dtype=np.int64)
+            for entity in range(entity_num):
+                neighbors = kg[entity]
+                n_neighbors = len(neighbors)
+                if n_neighbors >= args.neighbor_sample_size:
+                    sampled_indices = np.random.choice(list(range(n_neighbors)), size=args.neighbor_sample_size, replace=False)
+                else:
+                    sampled_indices = np.random.choice(list(range(n_neighbors)), size=args.neighbor_sample_size, replace=True)
+                adj_entity[entity] = np.array([neighbors[i][0] for i in sampled_indices])
+                adj_relation[entity] = np.array([neighbors[i][1] for i in sampled_indices])
+            return adj_entity, adj_relation
+
+        n_entity, n_relation, adj_entity, adj_relation = _kgnnls_load_kg(args)
+
+        model_define_args = {
+            'n_users': int(DATAINFO[args.dataset]['n_users']),
+            'n_items': int(DATAINFO[args.dataset]['n_items']),
+            'n_entities': n_entity,
+            'n_relations': n_relation,
+            'adj_entity': adj_entity,
+            'adj_relation': adj_relation,
+        }
+
+        logging.info(f'{args.dataset} dataset has {n_entity} entities and {n_relation} relations')
+        return train_data, valid_data, model_define_args
 
     else:
         raise NotImplementedError(f'You need to implement data prcessing for {args.model}')

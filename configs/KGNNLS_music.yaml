@@ -1,0 +1,19 @@
+model: KGNNLS
+dataset: music          # ['movie', 'book', 'music']
+
+ratio:                  # train / valid / test
+  - 0.6
+  - 0.2
+  - 0.2
+
+n_epochs: 20
+batch_size: 1024
+
+dim: 64
+
+n_iter: 1
+neighbor_sample_size: 8
+
+lr: 5e-4
+l2_weight: 1e-4
+ls_weight: 0.1         # Lambda for label smoothing loss

@@ -103,22 +103,6 @@ class GraphConv(nn.Module):
         out = torch.sparse.FloatTensor(i, v, x.shape).to(x.device)
         return out * (1. / (1 - rate))
 
-    # def _cul_cor_pro(self):
-    #     # disen_T: [num_factor, dimension]
-    #     disen_T = self.disen_weight_att.t()
-    #
-    #     # normalized_disen_T: [num_factor, dimension]
-    #     normalized_disen_T = disen_T / disen_T.norm(dim=1, keepdim=True)
-    #
-    #     pos_scores = torch.sum(normalized_disen_T * normalized_disen_T, dim=1)
-    #     ttl_scores = torch.sum(torch.mm(disen_T, self.disen_weight_att), dim=1)
-    #
-    #     pos_scores = torch.exp(pos_scores / self.temperature)
-    #     ttl_scores = torch.exp(ttl_scores / self.temperature)
-    #
-    #     mi_score = - torch.sum(torch.log(pos_scores / ttl_scores))
-    #     return mi_score
-
     def _cul_cor(self):
         def CosineSimilarity(tensor_1, tensor_2):
             # tensor_1, tensor_2: [channel]
@@ -214,11 +198,11 @@ class KGIN(nn.Module):
         self.n_users = data_config['n_users']
         self.n_items = data_config['n_items']
         self.n_relations = data_config['n_relations']
-        self.n_entities = data_config['n_entities']  # include items
-        self.n_nodes = data_config['n_nodes']  # n_users + n_entities
+        self.n_entities = data_config['n_entities']     # include items
+        self.n_nodes = data_config['n_nodes']           # n_users + n_entities
 
-        self.decay = config.l2_weight
-        self.sim_decay = config.sim_regularity
+        self.decay = float(config.l2_weight)
+        self.sim_decay = float(config.sim_regularity)
         self.emb_size = config.dim
         self.context_hops = config.context_hops
         self.n_factors = config.n_factors

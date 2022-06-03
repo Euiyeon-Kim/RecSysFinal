@@ -39,14 +39,13 @@ def prepare_train(config_path):
 
 def build_model_optim(config, device, model_define_args):
     model, optimizer = None, None
+    model = models.__dict__[config.model](config, device, model_define_args).to(device)
 
     if config.model == 'CKAN':
-        model = models.__dict__['CKAN'](config, device, model_define_args).to(device)
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
                                      lr=float(config.lr), weight_decay=float(config.l2_weight))
 
     elif config.model == 'KGIN':
-        model = models.__dict__['KGIN'](config, device, model_define_args).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=float(config.lr))
 
     return model, optimizer
