@@ -54,6 +54,7 @@ def train(config, datasets, writer, device):
 
         # Evaluate every epoch
         eval_auc, eval_f1 = ctr_eval(config, model, valid_data)
+        torch.save(model.state_dict(), f'exps/ckpt/{config.exp_name}_latest.pth')
 
         # Log
         writer.add_scalar('valid/auc', eval_auc, epoch)
