@@ -44,6 +44,7 @@ def train(config, datasets, writer, device):
             data = train_data[start:start + config.batch_size, :]
 
             loss = model(data)
+
             optim.zero_grad()
             loss.backward()
             optim.step()
@@ -68,13 +69,11 @@ def train(config, datasets, writer, device):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/KGNNLS_music.yaml', help='Configuration YAML path')
-    parser.add_argument('--topK', default=True, action='store_true', help='Do top-k evaluation')
+    parser.add_argument('--config', type=str, default='configs/KGIN_music.yaml', help='Configuration YAML path')
     args = parser.parse_args()
 
     set_random_seed(123, 456)
     config, writer = prepare_train(args.config)
-    config.topK = args.topK
 
     # Load dataset
     datasets = load_data(config)

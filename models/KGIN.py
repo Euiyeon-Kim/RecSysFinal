@@ -21,10 +21,7 @@ class Aggregator(nn.Module):
         self.n_users = n_users
         self.n_factors = n_factors
 
-    def forward(self, entity_emb, user_emb, latent_emb,
-                edge_index, edge_type, interact_mat,
-                weight, disen_weight_att):
-
+    def forward(self, entity_emb, user_emb, latent_emb, edge_index, edge_type, interact_mat, weight, disen_weight_att):
         n_entities = entity_emb.shape[0]
         channel = entity_emb.shape[1]
         n_users = self.n_users
@@ -131,6 +128,7 @@ class GraphConv(nn.Module):
             dcov_AA = torch.sqrt(torch.max((A * A).sum() / channel ** 2, zero) + 1e-8)
             dcov_BB = torch.sqrt(torch.max((B * B).sum() / channel ** 2, zero) + 1e-8)
             return dcov_AB / torch.sqrt(dcov_AA * dcov_BB + 1e-8)
+
         def MutualInformation():
             # disen_T: [num_factor, dimension]
             disen_T = self.disen_weight_att.t()
@@ -203,6 +201,7 @@ class KGIN(nn.Module):
         self.n_entities = data_config['n_entities']     # include items
         self.n_nodes = data_config['n_nodes']           # n_users + n_entities
 
+
         self.decay = float(config.l2_weight)
         self.sim_decay = float(config.sim_regularity)
         self.emb_size = config.dim
@@ -268,7 +267,6 @@ class KGIN(nn.Module):
     def forward(self, data):
         user_emb = self.all_embed[:self.n_users, :]
         item_emb = self.all_embed[self.n_users:, :]
-
         entity_gcn_emb, user_gcn_emb, cor = self.gcn(user_emb, item_emb, self.latent_emb,
                                                      self.edge_index, self.edge_type, self.interact_mat,
                                                      mess_dropout=self.mess_dropout, node_dropout=self.node_dropout)

@@ -113,7 +113,7 @@ def load_data(args):
         n_users = DATAINFO[args.dataset]['n_users']
         n_items = DATAINFO[args.dataset]['n_items']
         n_entities = DATAINFO[args.dataset]['n_entities']
-        n_nodes = n_entities + n_items
+        n_nodes = n_entities + n_users
 
         def _kgin_read_triplets(file_name):
             can_triplets_np = np.load(file_name)
