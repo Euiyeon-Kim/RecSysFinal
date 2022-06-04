@@ -104,11 +104,13 @@ class GraphConv(nn.Module):
         return out * (1. / (1 - rate))
 
     def _cul_cor(self):
+
         def CosineSimilarity(tensor_1, tensor_2):
             # tensor_1, tensor_2: [channel]
             normalized_tensor_1 = tensor_1 / tensor_1.norm(dim=0, keepdim=True)
             normalized_tensor_2 = tensor_2 / tensor_2.norm(dim=0, keepdim=True)
             return (normalized_tensor_1 * normalized_tensor_2).sum(dim=0) ** 2  # no negative
+
         def DistanceCorrelation(tensor_1, tensor_2):
             # tensor_1, tensor_2: [channel]
             # ref: https://en.wikipedia.org/wiki/Distance_correlation
@@ -341,5 +343,4 @@ class KGIN(nn.Module):
 
         i_rate_batch = self.rating(u_g_embeddings, i_g_embddings).detach().cpu()
         scores = i_rate_batch.diagonal()
-
-        return scores
+        return torch.sigmoid(scores)

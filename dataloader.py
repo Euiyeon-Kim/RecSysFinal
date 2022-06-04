@@ -267,8 +267,18 @@ def load_data(args):
                 adj_relation[entity] = np.array([neighbors[i][1] for i in sampled_indices])
             return adj_entity, adj_relation
 
-        n_entity, n_relation, adj_entity, adj_relation = _kgnnls_load_kg(args)
+        def _kgnnls_get_interaction_table(train_data, n_entity):
+            offset = len(str(n_entity))
+            offset = 10 ** offset
+            keys = train_data[:, 0] * offset + train_data[:, 1]
+            keys = keys.astype(np.int64)
+            values = train_data[:, 2].astype(np.float32)
+            interaction_table = defaultdict(lambda: 0.5)
+            interaction_table.update(zip(keys, values))
+            return interaction_table, offset
 
+        n_entity, n_relation, adj_entity, adj_relation = _kgnnls_load_kg(args)
+        interaction_table, offset = _kgnnls_get_interaction_table(train_data, n_entity)
         model_define_args = {
             'n_users': int(DATAINFO[args.dataset]['n_users']),
             'n_items': int(DATAINFO[args.dataset]['n_items']),
@@ -276,6 +286,8 @@ def load_data(args):
             'n_relations': n_relation,
             'adj_entity': adj_entity,
             'adj_relation': adj_relation,
+            'interaction_dict': interaction_table,
+            'offset': offset
         }
 
         logging.info(f'{args.dataset} dataset has {n_entity} entities and {n_relation} relations')

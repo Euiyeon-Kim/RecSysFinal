@@ -40,11 +40,11 @@ def train(config, datasets, writer, device):
         np.random.shuffle(train_data)
         start = 0
 
-        while start < train_data.shape[0]:
+        while (start + config.batch_size) < train_data.shape[0]:
             data = train_data[start:start + config.batch_size, :]
 
             loss = model(data)
-            exit()
+
             optim.zero_grad()
             loss.backward()
             optim.step()

@@ -70,7 +70,9 @@ class CKAN(nn.Module):
 
     def forward(self, data):
         scores = self.get_scores(data, False)
-        return self.one_step(scores, data)
+        labels = data[:, 2]
+        labels = torch.FloatTensor(labels).to(self.device)
+        return self.loss_fn(scores, labels)
 
     def predict(self, user_embeddings, item_embeddings):
         e_u = user_embeddings[0]
@@ -115,11 +117,6 @@ class CKAN(nn.Module):
         emb_i = torch.mul(att_weights_norm.unsqueeze(-1), t_emb)                   # [batch_size, triple_set_size, dim]
         emb_i = emb_i.sum(dim=1)                                                   # [batch_size, dim]
         return emb_i
-
-    def one_step(self, scores, data):
-        labels = data[:, 2]
-        labels = torch.FloatTensor(labels).to(self.device)
-        return self.loss_fn(scores, labels)
 
     def get_scores(self, data, as_np=True):
         user_triple_set, item_triple_set = self.user_triple_set, self.item_triple_set
