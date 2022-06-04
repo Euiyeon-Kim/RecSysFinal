@@ -17,11 +17,3 @@ neighbor_sample_size: 8
 lr: 5e-4
 l2_weight: 1e-4
 ls_weight: 0.1         # Lambda for label smoothing loss
-
-
-parser.add_argument('--dim', type=int, default=16, help='dimension of user and entity embeddings')
-parser.add_argument('--n_iter', type=int, default=1, help='number of iterations when computing entity representation')
-parser.add_argument('--batch_size', type=int, default=128, help='batch size')
-parser.add_argument('--l2_weight', type=float, default=1e-4, help='weight of l2 regularization')
-parser.add_argument('--ls_weight', type=float, default=0.1, help='weight of LS regularization')
-parser.add_argument('--lr', type=float, default=5e-4, help='learning rate')

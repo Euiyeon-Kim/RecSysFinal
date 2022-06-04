@@ -11,13 +11,11 @@ class Aggregator(nn.Module):
         self.dim = dim
         self.act = act
         self.dropout = dropout
-        self.batch_size = batch_size
 
     def _mix_neighbor_vectors(self, neighbor_vectors, neighbor_relations, user_embeddings):
         b = user_embeddings.shape[0]
         avg = False
         if not avg:
-            # user_embeddings = user_embeddings.view((self.batch_size, 1, 1, self.dim))
             user_embeddings = user_embeddings.view((b, 1, 1, self.dim))
             user_relation_scores = torch.mean(user_embeddings * neighbor_relations, dim=-1)
             user_relation_scores_normalized = torch.softmax(user_relation_scores, dim=-1).unsqueeze(-1)
@@ -45,22 +43,7 @@ class SumAggregator(Aggregator):
         output = (self_vectors + neighbors_agg).view(-1, self.dim)
         output = self.dropout(output)
         output = self.layer(output).view(b, -1, self.dim)
-        # output = self.layer(output).view(self.batch_size, -1, self.dim)
-
         return self.act(output)
-
-
-class LabelAggregator(Aggregator):
-    def __init__(self, config):
-        super(LabelAggregator, self).__init__(config.batch_size, config.dim, 0., nn.Identity)
-
-    def forward(self, self_labels, neighbor_labels, neighbor_relations, user_embeddings, masks):
-        user_embeddings = user_embeddings.view(self.batch_size, 1, 1, self.dim)
-        user_relation_scores = torch.mean(user_embeddings * neighbor_relations, dim=-1)
-        user_relation_scores_normalized = torch.softmax(user_relation_scores, dim=-1)
-        neighbors_aggregated = torch.mean(user_relation_scores_normalized * neighbor_labels, dim=-1)
-        output = masks * self_labels + torch.logical_not(masks) * neighbors_aggregated
-        return output
 
 
 class KGNNLS(nn.Module):
@@ -80,7 +63,6 @@ class KGNNLS(nn.Module):
 
         self.emb_size = config.dim
         self.n_iter = config.n_iter
-        self.batch_size = config.batch_size
         self.n_neighbor = config.neighbor_sample_size
         self.ls_lambda = float(config.ls_weight)
         self.l2_lambda = float(config.l2_weight)
@@ -88,9 +70,9 @@ class KGNNLS(nn.Module):
         self.aggregators = []
         for i in range(self.n_iter):
             if i == self.n_iter - 1:
-                aggregator = SumAggregator(self.config, act=nn.Tanh())
+                aggregator = SumAggregator(self.config, act=nn.Tanh()).to(self.device)
             else:
-                aggregator = SumAggregator(self.config)
+                aggregator = SumAggregator(self.config).to(self.device)
             self.aggregators.append(aggregator)
 
         self.user_emb = nn.Embedding(self.n_users, self.emb_size)
@@ -120,8 +102,6 @@ class KGNNLS(nn.Module):
             index = torch.flatten(entities[i])
             neighbor_entities = torch.index_select(self.adj_entity, 0, index).reshape(b, -1)
             neighbor_relations = torch.index_select(self.adj_relation, 0, index).reshape(b, -1)
-            # neighbor_entities = torch.index_select(self.adj_entity, 0, index).reshape(self.batch_size, -1)
-            # neighbor_relations = torch.index_select(self.adj_relation, 0, index).reshape(self.batch_size, -1)
             entities.append(neighbor_entities)
             relations.append(neighbor_relations)
         return entities, relations
@@ -136,7 +116,6 @@ class KGNNLS(nn.Module):
             entity_vectors_next_iter = []
             for hop in range(self.n_iter - i):
                 shape = [b, -1, self.n_neighbor, self.emb_size]
-                # shape = [self.batch_size, -1, self.n_neighbor, self.emb_size]
                 vector = aggregator(self_vectors=entity_vectors[hop],
                                     neighbor_vectors=entity_vectors[hop+1].view(shape),
                                     neighbor_relations=relation_vectors[hop].view(shape),
@@ -145,11 +124,12 @@ class KGNNLS(nn.Module):
                 entity_vectors_next_iter.append(vector)
             entity_vectors = entity_vectors_next_iter
 
-        # res = entity_vectors[0].view(self.batch_size, self.emb_size)
         res = entity_vectors[0].view(b, self.emb_size)
         return res
 
     def label_smoothness_predict(self, user_embeddings, user, entities, relations):
+        b = user_embeddings.shape[0]
+
         entity_labels = []
 
         # True means the label of this item is reset to initial value during label propagation
@@ -193,11 +173,11 @@ class KGNNLS(nn.Module):
             for hop in range(self.n_iter - i):
                 masks = reset_masks[hop]
                 self_labels = entity_labels[hop]
-                neighbor_labels = entity_labels[hop + 1].reshape(self.batch_size, -1, self.n_neighbor)
-                neighbor_relations = relation_vectors[hop].reshape(self.batch_size, -1, self.n_neighbor, self.emb_size)
+                neighbor_labels = entity_labels[hop + 1].reshape(b, -1, self.n_neighbor)
+                neighbor_relations = relation_vectors[hop].reshape(b, -1, self.n_neighbor, self.emb_size)
 
                 # mix_neighbor_labels
-                user_embeddings = user_embeddings.reshape(self.batch_size, 1, 1, self.emb_size)
+                user_embeddings = user_embeddings.reshape(b, 1, 1, self.emb_size)
                 user_relation_scores = torch.mean(user_embeddings * neighbor_relations, dim=-1)
                 user_relation_scores_normalized = torch.softmax(user_relation_scores, dim=-1)
                 neighbors_aggregated_label = torch.mean(user_relation_scores_normalized * neighbor_labels, dim=2)

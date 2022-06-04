@@ -44,7 +44,6 @@ def train(config, datasets, writer, device):
             data = train_data[start:start + config.batch_size, :]
 
             loss = model(data)
-
             optim.zero_grad()
             loss.backward()
             optim.step()
