@@ -89,7 +89,10 @@ class KGNNLS(nn.Module):
     def _get_feed_data(self, data):
         u_ids = torch.LongTensor(data[:, 0]).to(self.device)
         i_ids = torch.LongTensor(data[:, 1]).to(self.device)
-        labels = torch.FloatTensor(data[:, 2]).to(self.device)
+        if self.training:
+            labels = torch.FloatTensor(data[:, 2]).to(self.device)
+        else:
+            labels = None
         return u_ids, i_ids, labels
 
     def _get_neighbors(self, item_indices):
@@ -207,7 +210,7 @@ class KGNNLS(nn.Module):
         return loss
 
     def get_scores(self, data):
-        u_ids, i_ids, labels = self._get_feed_data(data)
+        u_ids, i_ids, _ = self._get_feed_data(data)
         user_embeddings = self.user_emb(u_ids)
 
         entities, relations = self._get_neighbors(i_ids)

@@ -121,7 +121,7 @@ def topk_eval(opt, model, train_data, test_data):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/KGIN_music.yaml', help='Configuration YAML path')
+    parser.add_argument('--config', type=str, default='configs/KGNNLS_music.yaml', help='Configuration YAML path')
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:
