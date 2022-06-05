@@ -201,7 +201,6 @@ class KGIN(nn.Module):
         self.n_entities = data_config['n_entities']     # include items
         self.n_nodes = data_config['n_nodes']           # n_users + n_entities
 
-
         self.decay = float(config.l2_weight)
         self.sim_decay = float(config.sim_regularity)
         self.emb_size = config.dim

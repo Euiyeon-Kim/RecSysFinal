@@ -13,7 +13,7 @@ from dataloader import load_data
 
 
 def topk_eval(opt, model, train_data, test_data):
-    def _show_rank_info(rank_zip):
+    def _show_rank_info(rank_zip, diversity):
         res = ""
         for k, rec, prec, f1, ndcg in rank_zip:
             res += "recall@%d:%.4f  " % (k, rec)
@@ -22,6 +22,7 @@ def topk_eval(opt, model, train_data, test_data):
             res += "ndcg@%d:%.4f  " % (k, ndcg)
             logging.info(res)
             res = ""
+        logging.info(f'diversity@10:{diversity:.4f}')
 
     def _get_user_record(data, is_train):
         user_history_dict = defaultdict(lambda: set())
@@ -49,11 +50,24 @@ def topk_eval(opt, model, train_data, test_data):
             return 0
         return dcg / idcg
 
+    def _get_div(topkset_list):
+        div_res = 0
+        N = len(topkset_list)
+        for i in range(N):
+            for j in range(N):
+                if j > i:
+                    a = topkset_list[i].intersection(topkset_list[j])
+                    b = topkset_list[i].union(topkset_list[j])
+                    if len(b) != 0:
+                        div_res = div_res + (1 - len(a) / len(b))
+        return (2 / (N * (N - 1))) * div_res
+
     k_list = [5, 10, 20, 50, 100]
     recall_list = {k: [] for k in k_list}
     precision_list = {k: [] for k in k_list}
     f1_list = {k: [] for k in k_list}
     ndcg_list = {k: [] for k in k_list}
+    topkset_list = []
 
     item_set = set(train_data[:, 1].tolist() + test_data[:, 1].tolist())
     train_record = _get_user_record(train_data, True)
@@ -86,6 +100,7 @@ def topk_eval(opt, model, train_data, test_data):
 
         item_score_pair_sorted = sorted(item_score_map.items(), key=lambda x: x[1], reverse=True)
         item_sorted = [i[0] for i in item_score_pair_sorted]
+        topkset_list.append(set(item_sorted[:10]))
         for k in k_list:
             topk_items_list = item_sorted[:k]
             hit_num = len(set(topk_items_list) & set(test_record[user]))
@@ -100,12 +115,13 @@ def topk_eval(opt, model, train_data, test_data):
     precisions = [np.mean(precision_list[k]) for k in k_list]
     f1s = [np.mean(f1_list[k]) for k in k_list]
     ndcgs = [np.mean(ndcg_list[k]) for k in k_list]
-    _show_rank_info(zip(k_list, recalls, precisions, f1s, ndcgs))
+    diversity = _get_div(topkset_list)
+    _show_rank_info(zip(k_list, recalls, precisions, f1s, ndcgs), diversity)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/CKAN_music.yaml', help='Configuration YAML path')
+    parser.add_argument('--config', type=str, default='configs/KGIN_music.yaml', help='Configuration YAML path')
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:
@@ -121,4 +137,7 @@ if __name__ == '__main__':
     model.load_state_dict(torch.load(f'exps/ckpt/{config.model}_{config.dataset}_best.pth'))
     model = model.to(device)
 
+    from train import ctr_eval
+    auc, f1 = ctr_eval(config, model, test_data)
+    logging.info(f"AUC: {auc:.4f}, F1: {f1:.4f}")
     topk_eval(config, model, train_data, test_data)
